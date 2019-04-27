@@ -6,14 +6,6 @@
 
 typedef struct {
   v2 p;
-  v2 tex_coord;
-  v4 color;
-  f32 transform_index;
-} Vertex;
-#if 0
-typedef struct {
-  v2 p;
-  v2 tex;
 } Quad_Vertex;
 
 typedef struct {
@@ -21,8 +13,8 @@ typedef struct {
   v2 tex_offset;
   v2 tex_scale;
   v4 color;
+  v2 origin;
 } Quad_Instance;
-#endif
 
 typedef enum {
   Entity_Type_NONE,
@@ -59,6 +51,7 @@ typedef struct {
 typedef struct {
   TextureAtlas *atlas;
   i32 index;
+  v2 origin;
 } Sprite;
 
 
@@ -87,7 +80,6 @@ typedef struct {
 } Render_Rect;
 
 typedef struct {
-  rect2 rect;
   v4 color;
   Sprite sprite;
 } Render_Sprite;
@@ -98,16 +90,25 @@ typedef struct {
     Render_Sprite Sprite;
   };
   Render_Type type;
-  Transform t;
+  mat3x3 matrix;
 } Render_Item;
 
 typedef struct {
   Render_Item *items;
   i32 item_count;
+  i32 item_capacity;
   Transform t;
   v2 screen_size;
 } Render_Group;
 
+
+typedef struct {
+  u32 vertex_vbo;
+  u32 instance_vbo;
+  u32 vao;
+  u32 texture;
+  u32 shader;
+} Quad_Renderer;
 
 typedef struct {
   b32 is_initialized;
@@ -125,10 +126,17 @@ typedef struct {
 } State;
 
 
+Transform transform_default() {
+  Transform t;
+  t.p = V2(0, 0);
+  t.angle = 0;
+  t.scale = V2(1, 1);
+  return t;
+}
 
 mat3x3 transform_get_matrix(Transform t) {
-  f32 cos = cos_f32(t.angle);
-  f32 sin = sin_f32(t.angle);
+  f32 cos = cos_f32(-t.angle);
+  f32 sin = sin_f32(-t.angle);
   mat3x3 rotate_m = Mat3x3(cos, sin, 0,
                            -sin, cos, 0,
                            0, 0, 1.0f);

@@ -2,23 +2,23 @@
 #version 330 core
 
 layout (location = 0) in vec2 pos;
-layout (location = 1) in vec2 v_tex_coord;
-layout (location = 2) in vec4 color;
-layout (location = 3) in float transform_index;
+layout (location = 1) in mat3x3 model;
+layout (location = 4) in vec2 tex_offset;
+layout (location = 5) in vec2 tex_scale;
+layout (location = 6) in vec4 color;
+layout (location = 7) in vec2 origin;
 
 out vec2 tex_coord;
 out vec4 v_color;
 
 uniform mat3x3 u_view;
-uniform mat3x3 u_model_arr[32];
 
 void main() {
-  mat3x3 u_model = u_model_arr[int(transform_index)];
+  vec3 p = u_view*transpose(model)*vec3(pos-origin, 1.0f);
+  tex_coord = tex_offset + pos*tex_scale;
   
-  vec3 p = u_view*u_model*vec3(pos, 1.0f);
-  gl_Position = vec4(p, 1.0);
-  tex_coord = v_tex_coord;
   v_color = color;
+  gl_Position = vec4(p, 1.0);
 }
 
 
@@ -37,4 +37,5 @@ out vec4 FragColor;
 
 void main() {
   FragColor = texture(texture_image, tex_coord)*v_color;
+  //FragColor = vec4(1, 1, 1, 1);
 }

@@ -2,7 +2,7 @@
 
 pushd build
 
-set compilerFlags=-Od -Gm -MTd -nologo -Oi -GR- -EHa- -WX -W4 -wd4702 -wd4005 -wd4505 -wd4456 -wd4201 -wd4100 -wd4189 -wd4204 -Zi -FC
+set compilerFlags=-O2 -Gm -MTd -nologo -Oi -GR- -EHa- -WX -W4 -wd4702 -wd4005 -wd4505 -wd4456 -wd4201 -wd4100 -wd4189 -wd4204 -Zi -FC
 set linkerFlags=-incremental:no -opt:ref OpenGL32.lib Winmm.lib user32.lib Gdi32.lib
 
 rem dsound.lib

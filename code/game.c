@@ -6,6 +6,7 @@
 #include "lvl5_opengl.h"
 #include "lvl5_context.h"
 #include "lvl5_stretchy_buffer.h"
+#include "lvl5_random.h"
 
 #define SCREEN_WIDTH_IN_METERS 10.0f
 
@@ -99,9 +100,11 @@ void push_arena_context(Arena *arena) {
 
 #define push_render_item(group, type, transform) (Render_##type *)push_render_item_(group, Render_Type_##type, transform)
 Render_Item *push_render_item_(Render_Group *group, Render_Type type, Transform t) {
+  assert(group->item_count < group->item_capacity);
   Render_Item *item = group->items + group->item_count++;
   item->type = type;
-  item->t = t;
+  item->matrix = mat3x3_mul_mat3x3(transform_get_matrix(group->t),
+                                   transform_get_matrix(t));
   return item;
 }
 
@@ -111,56 +114,118 @@ void push_rect(Render_Group *group, rect2 rect, v4 color, Transform t) {
   item->color = color;
 }
 
-void push_sprite(Render_Group *group, Sprite sprite, rect2 rect, v4 color, Transform t) {
+void push_sprite(Render_Group *group, Sprite sprite, v4 color, Transform t) {
   Render_Sprite *item = push_render_item(group, Sprite, t);
-  item->rect = rect;
   item->color = color;
   item->sprite = sprite;
 }
+
+
+
+void quad_renderer_init(State *state, gl_Funcs gl, Quad_Renderer *renderer) {
+  renderer->shader = state->shader_basic;
+  
+  gl.GenBuffers(1, &renderer->vertex_vbo);
+  gl.GenBuffers(1, &renderer->instance_vbo);
+  gl.GenVertexArrays(1, &renderer->vao);
+  
+  gl.BindVertexArray(renderer->vao);
+  gl.BindBuffer(GL_ARRAY_BUFFER, renderer->vertex_vbo);
+  gl.VertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Vertex), (void *)offsetof(Quad_Vertex, p));
+  gl.EnableVertexAttribArray(0);
+  
+  
+  // NOTE(lvl5): data layout
+  u64 v3_size = sizeof(v3);
+  u64 model_offset = offsetof(Quad_Instance, model);
+  
+  gl.BindBuffer(GL_ARRAY_BUFFER, renderer->instance_vbo);
+  gl.VertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                         (void *)(model_offset+0*v3_size));
+  gl.VertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                         (void *)(model_offset+1*v3_size));
+  gl.VertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                         (void *)(model_offset+2*v3_size));
+  
+  gl.VertexAttribPointer(4, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                         (void *)offsetof(Quad_Instance, tex_offset));
+  gl.VertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                         (void *)offsetof(Quad_Instance, tex_scale));
+  gl.VertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                         (void *)offsetof(Quad_Instance, color));
+  gl.VertexAttribPointer(7, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                         (void *)offsetof(Quad_Instance, origin));
+  gl.EnableVertexAttribArray(1);
+  gl.EnableVertexAttribArray(2);
+  gl.EnableVertexAttribArray(3);
+  gl.EnableVertexAttribArray(4);
+  gl.EnableVertexAttribArray(5);
+  gl.EnableVertexAttribArray(6);
+  gl.EnableVertexAttribArray(7);
+  
+  gl.VertexAttribDivisor(1, 1);
+  gl.VertexAttribDivisor(2, 1);
+  gl.VertexAttribDivisor(3, 1);
+  gl.VertexAttribDivisor(4, 1);
+  gl.VertexAttribDivisor(5, 1);
+  gl.VertexAttribDivisor(6, 1);
+  gl.VertexAttribDivisor(7, 1);
+  gl.BindVertexArray(null);
+  
+  
+  // NOTE(lvl5): buffer data
+  Quad_Vertex vertices[4] = {
+    (Quad_Vertex){V2(0, 1)},
+    (Quad_Vertex){V2(0, 0)},
+    (Quad_Vertex){V2(1, 1)},
+    (Quad_Vertex){V2(1, 0)},
+  };
+  gl.BindBuffer(GL_ARRAY_BUFFER, renderer->vertex_vbo);
+  gl.BufferData(GL_ARRAY_BUFFER, array_count(vertices)*sizeof(Quad_Vertex), vertices, GL_STATIC_DRAW);
+  
+  
+  gl.GenTextures(1, &renderer->texture);
+  gl.BindTexture(GL_TEXTURE_2D, renderer->texture);
+  gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+}
+
+void quad_renderer_destroy(gl_Funcs gl, Quad_Renderer *renderer) {
+  gl.DeleteBuffers(1, &renderer->instance_vbo);
+  gl.DeleteBuffers(1, &renderer->vertex_vbo);
+  gl.DeleteVertexArrays(1, &renderer->vao);
+  gl.DeleteTextures(1, &renderer->texture);
+  zero_memory_slow(renderer, sizeof(Quad_Renderer));
+}
+
+void quad_renderer_draw(gl_Funcs gl, Quad_Renderer *renderer, Bitmap *bmp, mat3x3 model_mat, Quad_Instance *instances, u32 instance_count) {
+  gl.BindBuffer(GL_ARRAY_BUFFER, renderer->instance_vbo);
+  gl.BufferData(GL_ARRAY_BUFFER, instance_count*sizeof(Quad_Instance),
+                instances, GL_DYNAMIC_DRAW);
+  
+  gl.UseProgram(renderer->shader);
+  gl_set_uniform_mat3x3(gl, renderer->shader, "u_view", &model_mat, 1);
+  
+  gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bmp->width, bmp->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, bmp->data);
+  
+  gl.BindVertexArray(renderer->vao);
+  gl.DrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, instance_count);
+}
+
+
+
 
 void render_group_init(Render_Group *group, i32 item_capacity, v2 screen_size) {
   group->items = alloc_array(Render_Item, item_capacity, 4);
   group->item_count = 0;
   group->screen_size = screen_size;
+  group->t = transform_default();
+  group->item_capacity = item_capacity;
 }
 
 void render_group_output(State *state, gl_Funcs gl, Render_Group *group) {
-  assert(group->item_count <= 32);
-  
-  u32 vbo; 
-  gl.GenBuffers(1, &vbo);
-  u32 ebo;
-  gl.GenBuffers(1, &ebo);
-  u32 vao;
-  gl.GenVertexArrays(1, &vao);
-  
-  gl.BindVertexArray(vao); {
-    gl.BindBuffer(GL_ARRAY_BUFFER, vbo);
-    gl.VertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, p));
-    gl.VertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, tex_coord));
-    gl.VertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, color));
-    gl.VertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                           (void *)offsetof(Vertex, transform_index));
-    
-    gl.EnableVertexAttribArray(0);
-    gl.EnableVertexAttribArray(1);
-    gl.EnableVertexAttribArray(2);
-    gl.EnableVertexAttribArray(3);
-    
-    gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-  }
-  
-  Vertex *sprite_vertices = 0;
-  sb_reserve(sprite_vertices, group->item_count*4, false);
-  
-  u32 *sprite_indices = 0;
-  sb_reserve(sprite_indices, group->item_count*6, false);
-  
-  mat3x3 *model_matrices = 0;
-  sb_reserve(model_matrices, group->item_count, false);
-  
-  u32 current_vertex_index = 0;
-  f32 current_transform_index = 0;
+  Quad_Instance *instances = 0;
+  sb_reserve(instances, group->item_count, false);
   
   TextureAtlas *atlas = 0;
   
@@ -169,54 +234,17 @@ void render_group_output(State *state, gl_Funcs gl, Render_Group *group) {
     switch (item->type) {
       case Render_Type_Sprite: {
         atlas = item->Sprite.sprite.atlas;
+        mat3x3 model_m = item->matrix;
+        rect2 tex_rect = sprite_get_normalized_rect(item->Sprite.sprite);
         
-        rect2 tex = sprite_get_normalized_rect(item->Sprite.sprite);
-        rect2 rect = item->Sprite.rect;
+        Quad_Instance inst = {0};
+        inst.model = model_m;
+        inst.tex_offset = tex_rect.min;
+        inst.tex_scale = rect2_get_size(tex_rect);
+        inst.color = item->Sprite.color;
+        inst.origin = item->Sprite.sprite.origin;
         
-        Vertex v_0 = (Vertex){
-          V2(rect.min.x, rect.min.y),
-          V2(tex.min.x, tex.min.y),
-          item->Sprite.color,
-          current_transform_index,
-        };
-        Vertex v_1 = (Vertex){
-          V2(rect.min.x, rect.max.y),
-          V2(tex.min.x, tex.max.y),
-          item->Sprite.color,
-          current_transform_index,
-        };
-        
-        Vertex v_2 = (Vertex){
-          V2(rect.max.x, rect.max.y),
-          V2(tex.max.x, tex.max.y),
-          item->Sprite.color,
-          current_transform_index,
-        };
-        
-        Vertex v_3 = (Vertex){
-          V2(rect.max.x, rect.min.y),
-          V2(tex.max.x, tex.min.y),
-          item->Sprite.color,
-          current_transform_index,
-        };
-        
-        sb_push(sprite_vertices, v_0);
-        sb_push(sprite_vertices, v_1);
-        sb_push(sprite_vertices, v_2);
-        sb_push(sprite_vertices, v_3);
-        
-        sb_push(sprite_indices, current_vertex_index+0);
-        sb_push(sprite_indices, current_vertex_index+1);
-        sb_push(sprite_indices, current_vertex_index+2);
-        sb_push(sprite_indices, current_vertex_index+0);
-        sb_push(sprite_indices, current_vertex_index+2);
-        sb_push(sprite_indices, current_vertex_index+3);
-        
-        mat3x3 model_m = transform_get_matrix(item->t);
-        sb_push(model_matrices, model_m);
-        
-        current_transform_index += 1;
-        current_vertex_index += 4;
+        sb_push(instances, inst);
       } break;
       
       case Render_Type_Rect: {
@@ -227,14 +255,74 @@ void render_group_output(State *state, gl_Funcs gl, Render_Group *group) {
     }
   }
   
+  u32 vertex_vbo; 
+  gl.GenBuffers(1, &vertex_vbo);
+  u32 instance_vbo;
+  gl.GenBuffers(1, &instance_vbo);
+  
+  u32 vao;
+  gl.GenVertexArrays(1, &vao);
+  
+  // NOTE(lvl5): data layout
+  gl.BindVertexArray(vao); {
+    gl.BindBuffer(GL_ARRAY_BUFFER, vertex_vbo);
+    gl.VertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Vertex), (void *)offsetof(Quad_Vertex, p));
+    gl.EnableVertexAttribArray(0);
+    
+    
+    u64 v3_size = sizeof(v3);
+    u64 model_offset = offsetof(Quad_Instance, model);
+    
+    gl.BindBuffer(GL_ARRAY_BUFFER, instance_vbo);
+    gl.VertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                           (void *)(model_offset+0*v3_size));
+    gl.VertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                           (void *)(model_offset+1*v3_size));
+    gl.VertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                           (void *)(model_offset+2*v3_size));
+    
+    gl.VertexAttribPointer(4, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                           (void *)offsetof(Quad_Instance, tex_offset));
+    gl.VertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                           (void *)offsetof(Quad_Instance, tex_scale));
+    gl.VertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                           (void *)offsetof(Quad_Instance, color));
+    gl.VertexAttribPointer(7, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+                           (void *)offsetof(Quad_Instance, origin));
+    gl.EnableVertexAttribArray(1);
+    gl.EnableVertexAttribArray(2);
+    gl.EnableVertexAttribArray(3);
+    gl.EnableVertexAttribArray(4);
+    gl.EnableVertexAttribArray(5);
+    gl.EnableVertexAttribArray(6);
+    gl.EnableVertexAttribArray(7);
+    
+    gl.VertexAttribDivisor(1, 1);
+    gl.VertexAttribDivisor(2, 1);
+    gl.VertexAttribDivisor(3, 1);
+    gl.VertexAttribDivisor(4, 1);
+    gl.VertexAttribDivisor(5, 1);
+    gl.VertexAttribDivisor(6, 1);
+    gl.VertexAttribDivisor(7, 1);
+  } gl.BindVertexArray(null);
+  
+  
   
   // NOTE(lvl5): buffering data
   {
-    gl.BindBuffer(GL_ARRAY_BUFFER, vbo);
-    gl.BufferData(GL_ARRAY_BUFFER, sb_count(sprite_vertices)*sizeof(Vertex), sprite_vertices, GL_DYNAMIC_DRAW);
+    Quad_Vertex vertices[4] = {
+      (Quad_Vertex){V2(0, 1)},
+      (Quad_Vertex){V2(0, 0)},
+      (Quad_Vertex){V2(1, 1)},
+      (Quad_Vertex){V2(1, 0)},
+    };
     
-    gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    gl.BufferData(GL_ELEMENT_ARRAY_BUFFER, sb_count(sprite_indices)*sizeof(u32), sprite_indices, GL_DYNAMIC_DRAW);
+    gl.BindBuffer(GL_ARRAY_BUFFER, vertex_vbo);
+    gl.BufferData(GL_ARRAY_BUFFER, array_count(vertices)*sizeof(Quad_Vertex), vertices, GL_STATIC_DRAW);
+    
+    gl.BindBuffer(GL_ARRAY_BUFFER, instance_vbo);
+    gl.BufferData(GL_ARRAY_BUFFER, sb_count(instances)*sizeof(Quad_Instance),
+                  instances, GL_STATIC_DRAW);
   }
   
   
@@ -251,7 +339,7 @@ void render_group_output(State *state, gl_Funcs gl, Render_Group *group) {
   }
   
   
-#if 1
+  
   // NOTE(lvl5): transform matrices
   {
     v2 screen_size_v2 = group->screen_size;
@@ -266,32 +354,31 @@ void render_group_output(State *state, gl_Funcs gl, Render_Group *group) {
     
     mat3x3 view_matrix = transform_get_matrix(view_transform);
     
-    
-    gl.BindVertexArray(vao);
     gl.UseProgram(state->shader_basic);
-    
-    gl_set_uniform_mat3x3(gl, state->shader_basic, "u_model_arr", model_matrices, group->item_count);
     gl_set_uniform_mat3x3(gl, state->shader_basic, "u_view", &view_matrix, 1);
   }
-#endif
+  
   
   // NOTE(lvl5): drawing
   {
+    gl.BindVertexArray(vao);
+    
     gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     gl.Clear(GL_COLOR_BUFFER_BIT);
     
-    u32 index_count = sb_count(sprite_indices);
-    gl.DrawElements(GL_TRIANGLES, index_count, GL_UNSIGNED_INT, 0);
+    gl.DrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, group->item_count);
   }
   
   // NOTE(lvl5): cleanup
   {
-    gl.DeleteBuffers(1, &vbo);
-    gl.DeleteBuffers(1, &ebo);
+    gl.DeleteBuffers(1, &instance_vbo);
+    gl.DeleteBuffers(1, &vertex_vbo);
     gl.DeleteVertexArrays(1, &vao);
     gl.DeleteTextures(1, &texture);
   }
 }
+
+
 
 Bitmap make_empty_bitmap(i32 width, i32 height) {
   Bitmap result;
@@ -392,58 +479,79 @@ extern GAME_UPDATE(game_update) {
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group group;
   push_arena_context(&state->temp); {
-    render_group_init(&group, 256, v2i_to_v2(screen_size));
+    render_group_init(&group, 10000, v2i_to_v2(screen_size));
   } pop_context();
   
+  Rand seed = make_random_sequence(214434334);
   
-  f32 leg_x = 0.25f;
-  f32 leg_y = -0.25f;
-  {
-    Sprite spr;
-    spr.atlas = &state->atlas;
-    spr.index = 0;
-    Transform sprite_transform;
-    sprite_transform.p = V2(-leg_x, leg_y);
-    sprite_transform.scale = V2(1, 1);
-    sprite_transform.angle = 0;
-    rect2 sprite_rect = rect2_center_size(V2(0, 0), V2(1, 1));
-    v4 sprite_color = V4(1, 1, 1, 1);
-    push_sprite(&group, spr, sprite_rect, sprite_color, sprite_transform);
-  }
+  static f32 leg_t = 0;
+  leg_t += 0.1f;
   
-  {
-    Sprite spr;
-    spr.atlas = &state->atlas;
-    spr.index = 0;
-    Transform sprite_transform;
-    sprite_transform.p = V2(leg_x, leg_y);
-    sprite_transform.scale = V2(-1, 1);
-    sprite_transform.angle = 0;
-    rect2 sprite_rect = rect2_center_size(V2(0, 0), V2(1, 1));
-    v4 sprite_color = V4(1, 1, 1, 1);
-    push_sprite(&group, spr, sprite_rect, sprite_color, sprite_transform);
-  }
+  static f32 body_x_t = 0;
+  body_x_t += 0.1f;
   
-  
-  {
-    static f32 body_x_t = 0;
-    body_x_t += 0.2f;
-    f32 body_y = sin_f32(body_x_t)*0.07f;
+  for (i32 i = 0; i < 3000; i++) {
+    f32 scale = 3.0f;
+    f32 leg_x = 0.15f;
+    f32 leg_y = -0.25f;
+    v2 leg_origin = V2(0.5f, 0.5f);
     
-    Sprite spr;
-    spr.atlas = &state->atlas;
-    spr.index = 1;
-    Transform sprite_transform;
-    sprite_transform.p = V2(0, body_y);
-    sprite_transform.scale = V2(1, 1);
-    sprite_transform.angle = 0;
-    rect2 sprite_rect = rect2_center_size(V2(0, 0), V2(1, 1));
-    v4 sprite_color = V4(1, 1, 1, 1);
-    push_sprite(&group, spr, sprite_rect, sprite_color, sprite_transform);
+    Transform robot_t = {0};
+    robot_t.p = V2(random_range(&seed, -5.0f, 5.0f), random_range(&seed, -4.0f, 4.0f));
+    robot_t.angle = 0;
+    robot_t.scale = V2(0.5f, 0.5f);
+    
+    
+    group.t = robot_t;
+    
+    {
+      Sprite spr;
+      spr.atlas = &state->atlas;
+      spr.index = 0;
+      spr.origin = leg_origin;
+      Transform sprite_transform;
+      sprite_transform.p = V2(leg_x, leg_y);
+      sprite_transform.scale = V2(1, 1);
+      sprite_transform.angle = sin_f32(leg_t)*0.3f;
+      v4 sprite_color = V4(1, 1, 1, 1);
+      push_sprite(&group, spr, sprite_color, sprite_transform);
+    }
+    
+    {
+      Sprite spr;
+      spr.atlas = &state->atlas;
+      spr.index = 0;
+      spr.origin = leg_origin;
+      Transform sprite_transform;
+      sprite_transform.p = V2(-leg_x, leg_y);
+      sprite_transform.scale = V2(-1, 1);
+      sprite_transform.angle = 0;
+      v4 sprite_color = V4(1, 1, 1, 1);
+      push_sprite(&group, spr, sprite_color, sprite_transform);
+    }
+    
+    
+    {
+      f32 body_y = -0.2f;// + sin_f32(body_x_t)*0.07f;
+      
+      Sprite spr;
+      spr.atlas = &state->atlas;
+      spr.index = 1;
+      spr.origin = V2(0.5f, 0.3f);
+      Transform sprite_transform;
+      sprite_transform.p = V2(0, body_y);
+      
+      //f32 scale = sin_f32(body_x_t)*0.07f;
+      sprite_transform.scale = V2(1, 1);
+      sprite_transform.angle = sin_f32(body_x_t*0.5f)*0.1f;
+      v4 sprite_color = V4(1, 1, 1, 1);
+      push_sprite(&group, spr, sprite_color, sprite_transform);
+    }
   }
   
-  
-  render_group_output(state, gl, &group);
+  push_arena_context(&state->temp); {
+    render_group_output(state, gl, &group);
+  } pop_context();
   
   
   

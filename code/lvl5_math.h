@@ -3,6 +3,26 @@
 #include "lvl5_types.h"
 #include "math.h"
 
+#define PI 3.14159265359f
+
+#define U8_MIN 0x0
+#define U16_MIN 0x0
+#define U32_MIN 0x0
+#define U64_MIN 0x0
+#define U8_MAX 0xFF
+#define U16_MAX 0xFFFF
+#define U32_MAX 0xFFFFFFFF
+#define U64_MAX 0xFFFFFFFFFFFFFFFF
+
+#define I8_MAX 0x7F
+#define I16_MAX 0x7FFF
+#define I32_MAX 0x7FFFFFFF
+#define I64_MAX 0x7FFFFFFFFFFFFFFF
+#define I8_MIN -I8_MAX-1
+#define I16_MIN -I16_MAX-1
+#define I32_MIN -I32_MAX-1
+#define I64_MIN -I64_MAX-1
+
 f32 sin_f32(f32 a) {
   f32 result = sinf(a);
   return result;

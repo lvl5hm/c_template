@@ -64,6 +64,8 @@ gl_Funcs gl_load_functions()
   load_opengl_proc(BindVertexArray);
   load_opengl_proc(DeleteBuffers);
   load_opengl_proc(DeleteVertexArrays);
+  load_opengl_proc(VertexAttribDivisor);
+  load_opengl_proc(DrawArraysInstanced);
   
   load_opengl_proc(Uniform4f);
   load_opengl_proc(Uniform3f);
