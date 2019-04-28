@@ -91,7 +91,8 @@ typedef struct {
   Render_Item *items;
   i32 item_count;
   i32 item_capacity;
-  Transform t;
+  mat4x4 matrix;
+  
   v2 screen_size;
 } Render_Group;
 
@@ -160,7 +161,7 @@ typedef struct {
   Arena temp;
   
   
-  Entity entities[128];
+  Entity entities[40000];
   i32 entity_count;
   
   GLuint shader_basic;
@@ -174,6 +175,7 @@ typedef struct {
 } State;
 
 
+
 Transform transform_default() {
   Transform t;
   t.p = V3(0, 0, 0);
@@ -182,30 +184,30 @@ Transform transform_default() {
   return t;
 }
 
-mat4x4 transform_get_matrix(Transform t) {
-  f32 cos = cos_f32(-t.angle);
-  f32 sin = sin_f32(-t.angle);
-  mat4x4 rotate_m = Mat4x4(cos,  sin,  0,    0,
-                           -sin, cos,  0,    0,
-                           0,    0,    1.0f, 0,
-                           0,    0,    0,    1.0f);
-  
-  mat4x4 scale_m = Mat4x4(t.scale.x, 0,         0,         0,
-                          0,         t.scale.y, 0,         0,
-                          0,         0,         t.scale.z, 0,
-                          0,         0,         0,         1.0f);
-  
-  
-  mat4x4 translate_m = Mat4x4(1.0f, 0,    0,    t.p.x,
-                              0,    1.0f, 0,    t.p.y,
-                              0,    0,    1.0f, t.p.z,
-                              0,    0,    0,    1.0f);
-  mat4x4 transform_m = mat4x4_mul_mat4x4(translate_m,
-                                         mat4x4_mul_mat4x4(rotate_m, scale_m));
-  
-  return transform_m;
+mat4x4 transform_apply(mat4x4 matrix, Transform t) {
+  mat4x4 result = matrix;
+  result = mat4x4_translate(result, t.p);
+  result = mat4x4_scale(result, t.scale);
+  result = mat4x4_rotate(result, t.angle);
+  return result;
 }
 
+
+void render_translate(Render_Group *group, v3 p) {
+  group->matrix = mat4x4_translate(group->matrix, p);
+}
+
+void render_scale(Render_Group *group, v3 scale) {
+  group->matrix = mat4x4_scale(group->matrix, scale);
+}
+
+void render_rotate(Render_Group *group, f32 angle) {
+  group->matrix = mat4x4_rotate(group->matrix, angle);
+}
+
+void render_transform(Render_Group *group, Transform t) {
+  group->matrix = transform_apply(group->matrix, t);
+}
 
 #define GAME_H
 #endif

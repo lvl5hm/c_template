@@ -1,6 +1,7 @@
 #ifndef LVL5_MATH
 
 #include "lvl5_types.h"
+#include "lvl5_intrinsics.h"
 #include "math.h"
 
 #define PI 3.14159265359f
@@ -22,6 +23,7 @@
 #define I16_MIN -I16_MAX-1
 #define I32_MIN -I32_MAX-1
 #define I64_MIN -I64_MAX-1
+
 
 f32 sin_f32(f32 a) {
   f32 result = sinf(a);
@@ -456,6 +458,7 @@ mat4x4 Mat4x4(f32 e00, f32 e10, f32 e20, f32 e30,
 // TODO(lvl5): simd this shit?
 mat4x4 mat4x4_mul_mat4x4(mat4x4 a, mat4x4 b) {
   mat4x4 result;
+  
   result.e00 = a.e00*b.e00 + a.e10*b.e01 + a.e20*b.e02 + a.e30*b.e03;
   result.e10 = a.e00*b.e10 + a.e10*b.e11 + a.e20*b.e12 + a.e30*b.e13;
   result.e20 = a.e00*b.e20 + a.e10*b.e21 + a.e20*b.e22 + a.e30*b.e23;
@@ -475,6 +478,44 @@ mat4x4 mat4x4_mul_mat4x4(mat4x4 a, mat4x4 b) {
   result.e13 = a.e03*b.e10 + a.e13*b.e11 + a.e23*b.e12 + a.e33*b.e13;
   result.e23 = a.e03*b.e20 + a.e13*b.e21 + a.e23*b.e22 + a.e33*b.e23;
   result.e33 = a.e03*b.e30 + a.e13*b.e31 + a.e23*b.e32 + a.e33*b.e33;
+  return result;
+}
+
+mat4x4 mat4x4_identity() {
+  mat4x4 result = Mat4x4(1, 0, 0, 0,
+                         0, 1, 0, 0,
+                         0, 0, 1, 0,
+                         0, 0, 0, 1);
+  return result;
+}
+
+mat4x4 mat4x4_scale(mat4x4 m, v3 scale) {
+  mat4x4 scale_m = Mat4x4(scale.x, 0,         0,         0,
+                          0,         scale.y, 0,         0,
+                          0,         0,         scale.z, 0,
+                          0,         0,         0,         1.0f);
+  
+  mat4x4 result = mat4x4_mul_mat4x4(m, scale_m);
+  return result;
+}
+
+mat4x4 mat4x4_rotate(mat4x4 m, f32 angle) {
+  f32 cos = cos_f32(-angle);
+  f32 sin = sin_f32(-angle);
+  mat4x4 rotate_m = Mat4x4(cos,  sin,  0,    0,
+                           -sin, cos,  0,    0,
+                           0,    0,    1.0f, 0,
+                           0,    0,    0,    1.0f);
+  mat4x4 result = mat4x4_mul_mat4x4(m, rotate_m);
+  return result;
+}
+
+mat4x4 mat4x4_translate(mat4x4 m, v3 p) {
+  mat4x4 translate_m = Mat4x4(1.0f, 0,    0,    p.x,
+                              0,    1.0f, 0,    p.y,
+                              0,    0,    1.0f, p.z,
+                              0,    0,    0,    1.0f);
+  mat4x4 result = mat4x4_mul_mat4x4(m, translate_m);
   return result;
 }
 

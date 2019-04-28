@@ -8,7 +8,7 @@
 #include "lvl5_stretchy_buffer.h"
 #include "lvl5_random.h"
 
-#define SCREEN_WIDTH_IN_METERS 10.0f
+#define PIXELS_PER_METER 96
 
 #pragma pack(push, 1)
 typedef struct {
@@ -111,24 +111,23 @@ void push_arena_context(Arena *arena) {
 }
 
 
-#define push_render_item(group, type, transform) (Render_##type *)push_render_item_(group, Render_Type_##type, transform)
-Render_Item *push_render_item_(Render_Group *group, Render_Type type, Transform t) {
+#define push_render_item(group, type) (Render_##type *)push_render_item_(group, Render_Type_##type)
+Render_Item *push_render_item_(Render_Group *group, Render_Type type) {
   assert(group->item_count < group->item_capacity);
   Render_Item *item = group->items + group->item_count++;
   item->type = type;
-  item->matrix = mat4x4_mul_mat4x4(transform_get_matrix(group->t),
-                                   transform_get_matrix(t));
+  item->matrix = group->matrix;
   return item;
 }
 
-void push_rect(Render_Group *group, rect2 rect, v4 color, Transform t) {
-  Render_Rect *item = push_render_item(group, Rect, t);
+void push_rect(Render_Group *group, rect2 rect, v4 color) {
+  Render_Rect *item = push_render_item(group, Rect);
   item->rect = rect;
   item->color = color;
 }
 
-void push_sprite(Render_Group *group, Sprite sprite, v4 color, Transform t) {
-  Render_Sprite *item = push_render_item(group, Sprite, t);
+void push_sprite(Render_Group *group, Sprite sprite, v4 color) {
+  Render_Sprite *item = push_render_item(group, Sprite);
   item->color = color;
   item->sprite = sprite;
 }
@@ -236,7 +235,7 @@ void render_group_init(Render_Group *group, i32 item_capacity, v2 screen_size) {
   group->items = alloc_array(Render_Item, item_capacity, 4);
   group->item_count = 0;
   group->screen_size = screen_size;
-  group->t = transform_default();
+  group->matrix = mat4x4_identity();//transform_get_matrix(transform_default());
   group->item_capacity = item_capacity;
 }
 
@@ -276,8 +275,7 @@ void render_group_output(State *state, gl_Funcs gl, Render_Group *group, Quad_Re
     }
     
     v2 screen_size_v2 = group->screen_size;
-    f32 pixels_per_meter = screen_size_v2.x/SCREEN_WIDTH_IN_METERS;
-    v2 screen_size_in_meters = v2_div_s(screen_size_v2, pixels_per_meter);
+    v2 screen_size_in_meters = v2_div_s(screen_size_v2, PIXELS_PER_METER);
     v2 gl_units_per_meter = v2_mul_s(v2_invert(screen_size_in_meters), 2);
     
     Transform view_transform;
@@ -285,7 +283,7 @@ void render_group_output(State *state, gl_Funcs gl, Render_Group *group, Quad_Re
     view_transform.angle = 0;
     view_transform.scale = v2_to_v3(gl_units_per_meter, 1.0f);
     
-    mat4x4 view_matrix = transform_get_matrix(view_transform);
+    mat4x4 view_matrix = transform_apply(mat4x4_identity(), view_transform);
     
     quad_renderer_draw(gl, renderer, &atlas->bmp, view_matrix, instances, sb_count(instances));
   }
@@ -338,10 +336,15 @@ TextureAtlas make_texture_atlas_from_folder(Platform platform, State *state,  St
     rect->min = V2(0, (f32)current_y/(f32)total_height);
     rect->max = V2(bmp->width/(f32)max_width, rect->min.y + (f32)bmp->height/(f32)total_height);
     
-    u32 dst_offset = current_y*max_width*sizeof(u32);
-    u32 size_in_bytes = bmp->height*bmp->width*sizeof(u32);
+    u32 *row = (u32 *)result.bmp.data + current_y*max_width;
+    for (i32 y = 0; y < bmp->height; y++) {
+      u32 *dst = row;
+      for (i32 x = 0; x < bmp->width; x++) {
+        *dst++ = ((u32 *)bmp->data)[y*bmp->width + x];
+      }
+      row += max_width;
+    }
     
-    copy_memory_slow(result.bmp.data + dst_offset, bmp->data, size_in_bytes);
     current_y += bmp->height;
   }
   
@@ -350,25 +353,11 @@ TextureAtlas make_texture_atlas_from_folder(Platform platform, State *state,  St
   return result;
 }
 
-void draw_robot(State *state, Render_Group *group) {
-  f32 leg_x = 0.15f;
-  f32 leg_y = -0.25f;
-  v2 leg_origin = V2(0.5f, 0.5f);
+void draw_robot(State *state, Render_Group *group, f32 body_x_t) {
+  f32 leg_x = 0.1f;
+  v2 leg_origin = V2(0, 1);
   
-  static f32 leg_t = 0;
-  //leg_t += 0.1f;
-  
-  static f32 body_x_t = 0;
-  body_x_t += 0.1f;
-  
-  
-  Transform robot_t = {0};
-  robot_t.p = V3(0, 0, 0);
-  robot_t.angle = 0;
-  robot_t.scale = V3(3, 3, 1);
-  
-  
-  
+  mat4x4 old = group->matrix;
   
   {
     Animation_Instance *inst = &state->right_leg_anim;
@@ -376,21 +365,24 @@ void draw_robot(State *state, Render_Group *group) {
     
     Sprite spr;
     spr.atlas = &state->atlas;
-    spr.index = 0;
+    spr.index = 1;
     spr.origin = leg_origin;
     
     Transform sprite_transform;
-    sprite_transform.p = v3_add(V3(leg_x, leg_y, 0), frame.t.p);
-    sprite_transform.scale = v3_hadamard(V3(1, 1, 1), frame.t.scale);
+    sprite_transform.p = v3_add(V3(leg_x, 0, 0), frame.t.p);
+    sprite_transform.scale = v3_hadamard(V3(0.25f, 0.25f, 1), frame.t.scale);
     sprite_transform.angle = frame.t.angle;
     v4 sprite_color = frame.color;
-    push_sprite(group, spr, sprite_color, sprite_transform);
     
-    inst->position += 0.05f;
-    if (inst->position > 1) {
-      inst->position = 0;
-    }
+    old = group->matrix; {
+      render_transform(group, sprite_transform);
+      push_sprite(group, spr, sprite_color);
+    } group->matrix = old;
   }
+  
+  
+  old = group->matrix;
+  render_scale(group, V3(-1, 1, 1));
   
   {
     Animation_Instance *inst = &state->left_leg_anim;
@@ -398,40 +390,64 @@ void draw_robot(State *state, Render_Group *group) {
     
     Sprite spr;
     spr.atlas = &state->atlas;
-    spr.index = 0;
+    spr.index = 1;
     spr.origin = leg_origin;
-    Transform sprite_transform;
     
-    sprite_transform.p = v3_add(V3(-leg_x, leg_y, 0), frame.t.p);
-    sprite_transform.scale = v3_hadamard(V3(-1, 1, 1), frame.t.scale);
-    sprite_transform.angle = -frame.t.angle;
+    Transform sprite_transform;
+    sprite_transform.p = v3_add(V3(leg_x, 0, 0), frame.t.p);
+    sprite_transform.p.x -= frame.t.p.x*2;
+    
+    sprite_transform.scale = v3_hadamard(V3(0.25f, 0.25f, 1), frame.t.scale);
+    sprite_transform.angle = frame.t.angle;
     v4 sprite_color = frame.color;
     
-    push_sprite(group, spr, sprite_color, sprite_transform);
-    
-    inst->position += 0.05f;
-    if (inst->position > 1) {
-      inst->position = 0;
-    }
+    render_transform(group, sprite_transform);
+    push_sprite(group, spr, sprite_color);
   }
   
+  group->matrix = old;
+  
+  
+  old = group->matrix;
+  render_rotate(group, sin_f32(body_x_t*0.5f)*0.2f);
+  render_translate(group, V3(0, 0.3f, 0));
   
   {
-    f32 body_y = -0.2f;// + sin_f32(body_x_t)*0.07f;
-    
     Sprite spr;
     spr.atlas = &state->atlas;
-    spr.index = 1;
-    spr.origin = V2(0.5f, 0.3f);
+    spr.index = 2;
+    spr.origin = V2(0.5f, 0.5f);
     Transform sprite_transform;
-    sprite_transform.p = V3(0, body_y, 0);
+    sprite_transform.p = V3(0, 0, 0);
+    sprite_transform.scale = V3(0.5f, 0.75f, 1);
+    sprite_transform.angle = 0;
     
-    //f32 scale = sin_f32(body_x_t)*0.07f;
-    sprite_transform.scale = V3(1, 1, 1);
-    sprite_transform.angle = sin_f32(body_x_t*0.5f)*0.1f;
     v4 sprite_color = V4(1, 1, 1, 1);
-    push_sprite(group, spr, sprite_color, sprite_transform);
+    
+    mat4x4 old = group->matrix;
+    render_transform(group, sprite_transform);
+    push_sprite(group, spr, sprite_color);
+    group->matrix = old;
   }
+  
+  {
+    Sprite spr;
+    spr.atlas = &state->atlas;
+    spr.index = 0;
+    spr.origin = V2(0.5f, 0.5f);
+    Transform sprite_transform;
+    sprite_transform.p = V3(sin_f32(body_x_t*0.2f)*0.1f, 0, 0);
+    sprite_transform.scale = V3(0.2f, 0.2f, 1);
+    sprite_transform.angle = 0;
+    v4 sprite_color = V4(1, 1, 1, 1);
+    
+    mat4x4 old = group->matrix;
+    render_transform(group, sprite_transform);
+    push_sprite(group, spr, sprite_color);
+    group->matrix = old;
+  }
+  
+  group->matrix = old;
 }
 
 extern GAME_UPDATE(game_update) {
@@ -490,7 +506,7 @@ extern GAME_UPDATE(game_update) {
     Animation_Frame frame1 = (Animation_Frame){
       0.33f,
       (Transform){
-        V3(0.2f, 0, 0), // p
+        V3(0.12f, 0, 0), // p
         V3(1, 1, 1), // scale
         PI*0.4, // angle
       },
@@ -500,7 +516,7 @@ extern GAME_UPDATE(game_update) {
     Animation_Frame frame2 = (Animation_Frame){
       0.66f,
       (Transform){
-        V3(0.23f, 0, 0), // p
+        V3(0.15f, 0, 0), // p
         V3(1, 1, 1), // scale
         0, // angle
       },
@@ -529,10 +545,34 @@ extern GAME_UPDATE(game_update) {
     
     state->left_leg_anim.anim = &state->robot_leg_animation;
     state->right_leg_anim.anim = &state->robot_leg_animation;
-    state->left_leg_anim.position = 0.25f;
+    state->left_leg_anim.position = 0.5f;
+    
+    
+    Rand seed = make_random_sequence(214434334);
+    for (i32 i = 0; i < 100; i++) {
+      i32 player_index = add_entity_player(state);
+      Entity *e = get_entity(state, player_index);
+      e->t.p = V3(random_range(&seed, -10, 0), random_range(&seed, -3, 3), 0);
+    }
     
     
     state->is_initialized = true;
+  }
+  
+  f32 anim_speed = 0.02f;
+  {
+    Animation_Instance *inst = &state->right_leg_anim;
+    inst->position += anim_speed;
+    if (inst->position > 1) {
+      inst->position = 0;
+    }
+  }
+  {
+    Animation_Instance *inst = &state->left_leg_anim;
+    inst->position += anim_speed;
+    if (inst->position > 1) {
+      inst->position = 0;
+    }
   }
   
   
@@ -542,16 +582,25 @@ extern GAME_UPDATE(game_update) {
     render_group_init(&group, 100000, v2i_to_v2(screen_size));
   } pop_context();
   
-  //Rand seed = make_random_sequence(214434334);
+  
+  static f32 body_x_t = 0;
+  body_x_t += 0.1f;
   
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
     Entity *entity = get_entity(state, entity_index);
     
     switch (entity->type) {
       case Entity_Type_PLAYER: {
-        entity->t.scale = V3(2, 2, 1);
-        group.t = entity->t;
-        draw_robot(state, &group);
+        static f32 t_scale = 0;
+        t_scale += 0.01f;
+        entity->t.p = v3_add(entity->t.p, V3(0.01f, 0, 0));
+        f32 scale = 1;//(sin_f32(t_scale) + 1.0f)*3;
+        entity->t.scale = V3(scale, scale, 1);
+        
+        mat4x4 old = group.matrix;
+        group.matrix = transform_apply(group.matrix, entity->t);
+        draw_robot(state, &group, body_x_t);
+        group.matrix = old;
       } break;
     }
   }
