@@ -152,6 +152,13 @@ void gl_set_uniform_mat3x3(gl_Funcs gl, GLint program, char *name, mat3x3 *value
   gl.UniformMatrix3fv(uniform_loc, count, GL_TRUE, (GLfloat *)value);
 }
 
+
+void gl_set_uniform_mat4x4(gl_Funcs gl, GLint program, char *name, mat4x4 *value, u32 count) {
+  GLint uniform_loc = gl.GetUniformLocation(program, name);
+  gl.UniformMatrix4fv(uniform_loc, count, GL_TRUE, (GLfloat *)value);
+}
+
+
 void gl_set_uniform_v4(gl_Funcs gl, GLint program, char *name, v4 value) {
   GLint uniform_loc = gl.GetUniformLocation(program, name);
   gl.Uniform4f(uniform_loc, value.x, value.y, value.z, value.w);

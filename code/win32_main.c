@@ -377,10 +377,11 @@ void APIENTRY opengl_debug_callback(GLenum source,
                                     GLenum severity,
                                     GLsizei length,
                                     const GLchar* message,
-                                    const void* userParam)
-{
+                                    const void* userParam) {
+#if 1
   OutputDebugStringA(message);
   __debugbreak();
+#endif
 }
 
 LRESULT CALLBACK WindowProc(HWND window,

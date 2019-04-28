@@ -5,11 +5,11 @@
 
 
 typedef struct {
-  v2 p;
+  v3 p;
 } Quad_Vertex;
 
 typedef struct {
-  mat3x3 model;
+  mat4x4 model;
   v2 tex_offset;
   v2 tex_scale;
   v4 color;
@@ -30,9 +30,9 @@ typedef struct {
 } Bitmap;
 
 typedef struct {
-  v2 scale;
+  v3 p;
+  v3 scale;
   f32 angle;
-  v2 p;
 } Transform;
 
 typedef struct {
@@ -44,7 +44,7 @@ typedef struct {
 
 typedef struct {
   Bitmap bmp;
-  rect2i *sprites;
+  rect2 *rects;
   i32 sprite_count;
 } TextureAtlas;
 
@@ -55,14 +55,8 @@ typedef struct {
 } Sprite;
 
 
-rect2 sprite_get_normalized_rect(Sprite spr) {
-  rect2 rect = rect2i_to_rect2(spr.atlas->sprites[spr.index]);
-  v2 inv_size = v2_invert(V2((f32)spr.atlas->bmp.width, (f32)spr.atlas->bmp.height));
-  
-  rect2 result;
-  result.min = v2_hadamard(rect.min, inv_size);
-  result.max = v2_hadamard(rect.max, inv_size);
-  
+rect2 sprite_get_rect(Sprite spr) {
+  rect2 result = spr.atlas->rects[spr.index];
   return result;
 }
 
@@ -90,7 +84,7 @@ typedef struct {
     Render_Sprite Sprite;
   };
   Render_Type type;
-  mat3x3 matrix;
+  mat4x4 matrix;
 } Render_Item;
 
 typedef struct {
@@ -110,6 +104,55 @@ typedef struct {
   u32 shader;
 } Quad_Renderer;
 
+
+
+
+
+typedef struct {
+  f32 position;  // 0 - 1
+  Transform t;
+  v4 color;
+} Animation_Frame;
+
+typedef struct {
+  Animation_Frame *frames;
+  i32 frame_count;
+} Animation;
+
+typedef struct {
+  f32 position;
+  Animation *anim;
+} Animation_Instance;
+
+Animation_Frame animation_get_frame(Animation_Instance *inst) {
+  Animation *anim = inst->anim;
+  f32 position = inst->position;
+  
+  i32 prev_index = -1;
+  while ((prev_index < anim->frame_count) && (position > anim->frames[prev_index+1].position)) {
+    prev_index++;
+  }
+  
+  Animation_Frame result;
+  if (prev_index == -1) {
+    result = anim->frames[0];
+  } else if (prev_index == anim->frame_count) {
+    result = anim->frames[anim->frame_count-1];
+  } else {
+    Animation_Frame prev = anim->frames[prev_index];
+    Animation_Frame next = anim->frames[prev_index+1];
+    f32 c = (position - prev.position)/(next.position - prev.position);
+    
+    result.t.p = lerp_v3(prev.t.p, next.t.p, V3(c, c, c));
+    result.t.scale = lerp_v3(prev.t.scale, next.t.scale, V3(c, c, c));
+    result.t.angle = lerp_f32(prev.t.angle, next.t.angle, c);
+    result.color = lerp_v4(prev.color, next.color, V4(c, c, c, c));
+  }
+  
+  return result;
+}
+
+
 typedef struct {
   b32 is_initialized;
   Arena arena;
@@ -123,34 +166,42 @@ typedef struct {
   GLuint shader_basic;
   
   TextureAtlas atlas;
+  Quad_Renderer renderer;
+  
+  Animation robot_leg_animation;
+  Animation_Instance left_leg_anim;
+  Animation_Instance right_leg_anim;
 } State;
 
 
 Transform transform_default() {
   Transform t;
-  t.p = V2(0, 0);
+  t.p = V3(0, 0, 0);
   t.angle = 0;
-  t.scale = V2(1, 1);
+  t.scale = V3(1, 1, 1);
   return t;
 }
 
-mat3x3 transform_get_matrix(Transform t) {
+mat4x4 transform_get_matrix(Transform t) {
   f32 cos = cos_f32(-t.angle);
   f32 sin = sin_f32(-t.angle);
-  mat3x3 rotate_m = Mat3x3(cos, sin, 0,
-                           -sin, cos, 0,
-                           0, 0, 1.0f);
+  mat4x4 rotate_m = Mat4x4(cos,  sin,  0,    0,
+                           -sin, cos,  0,    0,
+                           0,    0,    1.0f, 0,
+                           0,    0,    0,    1.0f);
   
-  mat3x3 scale_m = Mat3x3(t.scale.x, 0, 0,
-                          0, t.scale.y, 0,
-                          0, 0, 1.0f);
+  mat4x4 scale_m = Mat4x4(t.scale.x, 0,         0,         0,
+                          0,         t.scale.y, 0,         0,
+                          0,         0,         t.scale.z, 0,
+                          0,         0,         0,         1.0f);
   
   
-  mat3x3 translate_m = Mat3x3(1.0f, 0, t.p.x,
-                              0, 1.0f, t.p.y,
-                              0, 0, 1.0f);
-  mat3x3 transform_m = mat3x3_mul_mat3x3(translate_m,
-                                         mat3x3_mul_mat3x3(rotate_m, scale_m));
+  mat4x4 translate_m = Mat4x4(1.0f, 0,    0,    t.p.x,
+                              0,    1.0f, 0,    t.p.y,
+                              0,    0,    1.0f, t.p.z,
+                              0,    0,    0,    1.0f);
+  mat4x4 transform_m = mat4x4_mul_mat4x4(translate_m,
+                                         mat4x4_mul_mat4x4(rotate_m, scale_m));
   
   return transform_m;
 }

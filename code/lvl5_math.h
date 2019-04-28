@@ -39,6 +39,8 @@ i16 abs_i16(i16 a) {
 }
 
 
+
+
 // v2
 
 typedef struct {
@@ -188,6 +190,13 @@ v3 v3_div_s(v3 a, f32 s) {
   return result;
 }
 
+v3 v2_to_v3(v2 a, f32 z) {
+  v3 result;
+  result.x = a.x;
+  result.y = a.y;
+  result.z = z;
+  return result;
+}
 
 // V4
 typedef union {
@@ -404,6 +413,72 @@ mat3x3 mat3x3_mul_mat3x3(mat3x3 a, mat3x3 b) {
   return result;
 }
 
+
+// mat4x4
+typedef union {
+  f32 e[9];
+  struct {
+    f32 e00; f32 e10; f32 e20; f32 e30;
+    f32 e01; f32 e11; f32 e21; f32 e31;
+    f32 e02; f32 e12; f32 e22; f32 e32;
+    f32 e03; f32 e13; f32 e23; f32 e33;
+  };
+} mat4x4;
+
+mat4x4 Mat4x4(f32 e00, f32 e10, f32 e20, f32 e30,
+              f32 e01, f32 e11, f32 e21, f32 e31,
+              f32 e02, f32 e12, f32 e22, f32 e32,
+              f32 e03, f32 e13, f32 e23, f32 e33) {
+  mat4x4 result;
+  result.e00 = e00;
+  result.e10 = e10;
+  result.e20 = e20;
+  result.e30 = e30,
+  
+  result.e01 = e01;
+  result.e11 = e11;
+  result.e21 = e21;
+  result.e31 = e31;
+  
+  result.e02 = e02;
+  result.e12 = e12;
+  result.e22 = e22;
+  result.e32 = e32;
+  
+  result.e03 = e03;
+  result.e13 = e13;
+  result.e23 = e23;
+  result.e33 = e33;
+  
+  return result;
+}
+
+// TODO(lvl5): simd this shit?
+mat4x4 mat4x4_mul_mat4x4(mat4x4 a, mat4x4 b) {
+  mat4x4 result;
+  result.e00 = a.e00*b.e00 + a.e10*b.e01 + a.e20*b.e02 + a.e30*b.e03;
+  result.e10 = a.e00*b.e10 + a.e10*b.e11 + a.e20*b.e12 + a.e30*b.e13;
+  result.e20 = a.e00*b.e20 + a.e10*b.e21 + a.e20*b.e22 + a.e30*b.e23;
+  result.e30 = a.e00*b.e30 + a.e10*b.e31 + a.e20*b.e32 + a.e30*b.e33;
+  
+  result.e01 = a.e01*b.e00 + a.e11*b.e01 + a.e21*b.e02 + a.e31*b.e03;
+  result.e11 = a.e01*b.e10 + a.e11*b.e11 + a.e21*b.e12 + a.e31*b.e13;
+  result.e21 = a.e01*b.e20 + a.e11*b.e21 + a.e21*b.e22 + a.e31*b.e23;
+  result.e31 = a.e01*b.e30 + a.e11*b.e31 + a.e21*b.e32 + a.e31*b.e33;
+  
+  result.e02 = a.e02*b.e00 + a.e12*b.e01 + a.e22*b.e02 + a.e32*b.e03;
+  result.e12 = a.e02*b.e10 + a.e12*b.e11 + a.e22*b.e12 + a.e32*b.e13;
+  result.e22 = a.e02*b.e20 + a.e12*b.e21 + a.e22*b.e22 + a.e32*b.e23;
+  result.e32 = a.e02*b.e30 + a.e12*b.e31 + a.e22*b.e32 + a.e32*b.e33;
+  
+  result.e03 = a.e03*b.e00 + a.e13*b.e01 + a.e23*b.e02 + a.e33*b.e03;
+  result.e13 = a.e03*b.e10 + a.e13*b.e11 + a.e23*b.e12 + a.e33*b.e13;
+  result.e23 = a.e03*b.e20 + a.e13*b.e21 + a.e23*b.e22 + a.e33*b.e23;
+  result.e33 = a.e03*b.e30 + a.e13*b.e31 + a.e23*b.e32 + a.e33*b.e33;
+  return result;
+}
+
+
 // rect2
 
 typedef struct {
@@ -479,6 +554,43 @@ rect2 rect2i_to_rect2(rect2i r) {
   result.max = v2i_to_v2(r.max);
   return result;
 }
+
+
+
+
+// NOTE(lvl5): misc
+f32 lerp_f32(f32 a, f32 b, f32 c) {
+  f32 result = a*(1 - c) + b*c;
+  return result;
+}
+
+v2 lerp_v2(v2 a, v2 b, v2 c) {
+  v2 result;
+  result.x = lerp_f32(a.x, b.x, c.x);
+  result.y = lerp_f32(a.y, b.y, c.y);
+  return result;
+}
+
+
+v3 lerp_v3(v3 a, v3 b, v3 c) {
+  v3 result;
+  result.x = lerp_f32(a.x, b.x, c.x);
+  result.y = lerp_f32(a.y, b.y, c.y);
+  result.z = lerp_f32(a.z, b.z, c.z);
+  return result;
+}
+
+
+v4 lerp_v4(v4 a, v4 b, v4 c) {
+  v4 result;
+  result.x = lerp_f32(a.x, b.x, c.x);
+  result.y = lerp_f32(a.y, b.y, c.y);
+  result.z = lerp_f32(a.z, b.z, c.z);
+  result.w = lerp_f32(a.w, b.w, c.w);
+  return result;
+}
+
+
 
 #define LVL5_MATH
 #endif
