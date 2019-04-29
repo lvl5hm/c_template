@@ -1,24 +1,24 @@
 #shader vertex
 #version 330 core
 
-layout (location = 0) in vec3 pos;
-layout (location = 1) in mat4x4 model;
-layout (location = 5) in vec2 tex_offset;
-layout (location = 6) in vec2 tex_scale;
-layout (location = 7) in vec4 color;
+layout (location = 0) in vec3 v_pos;
 
-out vec2 tex_coord;
-out vec4 v_color;
+layout (location = 1) in mat4x4 inst_model;
+layout (location = 5) in vec2 inst_tex_offset;
+layout (location = 6) in vec2 inst_tex_scale;
+layout (location = 7) in vec4 inst_color;
+
+out vec2 fr_tex_coord;
+out vec4 fr_color;
 
 uniform mat4x4 u_view;
 
 void main() {
-  mat4x4 u_model = transpose(model);
-  vec4 p = u_view*u_model*vec4(pos, 1.0f);
-  tex_coord = tex_offset + pos.xy*tex_scale;
-  
-  v_color = color;
+  vec4 p = u_view*inst_model*vec4(v_pos, 1.0f);
   gl_Position = p;
+  
+  fr_tex_coord = inst_tex_offset + v_pos.xy*inst_tex_scale;
+  fr_color = inst_color;
 }
 
 
@@ -28,13 +28,13 @@ void main() {
 #version 330 core
 
 
-in vec2 tex_coord;
-in vec4 v_color;
+in vec2 fr_tex_coord;
+in vec4 fr_color;
 
 uniform sampler2D texture_image;
 
 out vec4 FragColor;
 
 void main() {
-  FragColor = texture(texture_image, tex_coord)*v_color;
+  FragColor = texture(texture_image, fr_tex_coord)*fr_color;
 }

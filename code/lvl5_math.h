@@ -423,7 +423,7 @@ mat3x3 mat3x3_mul_mat3x3(mat3x3 a, mat3x3 b) {
 
 // mat4x4
 typedef union {
-  f32 e[9];
+  f32 e[16];
   struct {
     f32 e00; f32 e10; f32 e20; f32 e30;
     f32 e01; f32 e11; f32 e21; f32 e31;
@@ -521,6 +521,16 @@ mat4x4 mat4x4_translate(mat4x4 m, v3 p) {
                               0,    0,    1.0f, p.z,
                               0,    0,    0,    1.0f);
   mat4x4 result = mat4x4_mul_mat4x4(m, translate_m);
+  return result;
+}
+
+mat4x4 mat4x4_transpose(mat4x4 m) {
+  mat4x4 result;
+  for (i32 y = 0; y < 4; y++) {
+    for (i32 x = 0; x < 4; x++) {
+      result.e[y*4 + x] = m.e[x*4 + y];
+    }
+  }
   return result;
 }
 

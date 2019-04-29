@@ -260,7 +260,7 @@ void render_group_output(State *state, gl_Funcs gl, Render_Group *group, Quad_Re
           rect2 tex_rect = sprite_get_rect(sprite);
           
           Quad_Instance inst = {0};
-          inst.model = model_m;
+          inst.model = mat4x4_transpose(model_m);
           inst.tex_offset = tex_rect.min;
           inst.tex_scale = rect2_get_size(tex_rect);
           inst.color = item->color;
