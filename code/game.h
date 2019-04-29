@@ -13,7 +13,6 @@ typedef struct {
   v2 tex_offset;
   v2 tex_scale;
   v4 color;
-  v2 origin;
 } Quad_Instance;
 
 typedef enum {
@@ -46,10 +45,10 @@ typedef struct {
   Bitmap bmp;
   rect2 *rects;
   i32 sprite_count;
-} TextureAtlas;
+} Texture_Atlas;
 
 typedef struct {
-  TextureAtlas *atlas;
+  Texture_Atlas *atlas;
   i32 index;
   v2 origin;
 } Sprite;
@@ -70,11 +69,9 @@ typedef enum {
 
 typedef struct {
   rect2 rect;
-  v4 color;
 } Render_Rect;
 
 typedef struct {
-  v4 color;
   Sprite sprite;
 } Render_Sprite;
 
@@ -85,6 +82,7 @@ typedef struct {
   };
   Render_Type type;
   mat4x4 matrix;
+  v4 color;
 } Render_Item;
 
 typedef struct {
@@ -92,8 +90,12 @@ typedef struct {
   i32 item_count;
   i32 item_capacity;
   mat4x4 matrix;
+  v4 color;
   
   v2 screen_size;
+  
+  mat4x4 transform_stack[16];
+  i32 transform_stack_count;
 } Render_Group;
 
 
@@ -166,8 +168,13 @@ typedef struct {
   
   GLuint shader_basic;
   
-  TextureAtlas atlas;
+  Texture_Atlas atlas;
   Quad_Renderer renderer;
+  
+  
+  Sprite spr_robot_torso;
+  Sprite spr_robot_leg;
+  Sprite spr_robot_eye;
   
   Animation robot_leg_animation;
   Animation_Instance left_leg_anim;
@@ -187,11 +194,28 @@ Transform transform_default() {
 mat4x4 transform_apply(mat4x4 matrix, Transform t) {
   mat4x4 result = matrix;
   result = mat4x4_translate(result, t.p);
-  result = mat4x4_scale(result, t.scale);
   result = mat4x4_rotate(result, t.angle);
+  result = mat4x4_scale(result, t.scale);
   return result;
 }
 
+Transform make_transform(v3 p, v3 scale, f32 angle) {
+  Transform t;
+  t.p = p;
+  t.scale = scale;
+  t.angle = angle;
+  return t;
+}
+
+void render_save(Render_Group *group) {
+  assert(group->transform_stack_count < array_count(group->transform_stack));
+  group->transform_stack[group->transform_stack_count++] = group->matrix;
+}
+
+void render_restore(Render_Group *group) {
+  assert(group->transform_stack_count > 0);
+  group->matrix = group->transform_stack[--group->transform_stack_count];
+}
 
 void render_translate(Render_Group *group, v3 p) {
   group->matrix = mat4x4_translate(group->matrix, p);
@@ -208,6 +232,13 @@ void render_rotate(Render_Group *group, f32 angle) {
 void render_transform(Render_Group *group, Transform t) {
   group->matrix = transform_apply(group->matrix, t);
 }
+
+// TODO(lvl5): this needs to be pushed/popped together with transforms
+// or on a separate stack?
+void render_color(Render_Group *group, v4 color) {
+  group->color = color;
+}
+
 
 #define GAME_H
 #endif

@@ -197,7 +197,7 @@ LPDIRECTSOUNDBUFFER win32_init_dsound(HWND window, win32_Sound *win32_sound) {
 String win32_get_work_dir()
 {
   String full_path;
-  full_path.data = (char *)temp_alloc(MAX_PATH, 4);
+  full_path.data = (char *)scratch_alloc(MAX_PATH, 4);
   full_path.count = GetModuleFileNameA(0, full_path.data, MAX_PATH);
   assert(full_path.count);
   
@@ -206,14 +206,14 @@ String win32_get_work_dir()
   
   String path_end = const_string("../data/");
   
-  result = temp_concat(result, path_end);
+  result = scratch_concat(result, path_end);
   return result;
 }
 
 PLATFORM_READ_ENTIRE_FILE(win32_read_entire_file) {
   String path = win32_get_work_dir();
-  String full_name = temp_concat(path, file_name);
-  char *c_file_name = temp_c_string(full_name);
+  String full_name = scratch_concat(path, file_name);
+  char *c_file_name = scratch_c_string(full_name);
   HANDLE file = CreateFileA(c_file_name,
                             GENERIC_READ,
                             FILE_SHARE_READ,
@@ -414,8 +414,8 @@ File_List win32_get_files_in_folder(String str) {
     sb_reserve(result.files, 8, true);
     
     WIN32_FIND_DATAA findData;
-    String wildcard = temp_concat(str, const_string("\\*.*"));
-    char *wildcard_c = temp_c_string(wildcard);
+    String wildcard = scratch_concat(str, const_string("\\*.*"));
+    char *wildcard_c = scratch_c_string(wildcard);
     HANDLE file = FindFirstFileA(wildcard_c, &findData);
     
     while (file != INVALID_HANDLE_VALUE) {
@@ -460,8 +460,8 @@ int CALLBACK WinMain(HINSTANCE instance,
   heap_ctx.allocator = heap_allocator;
   heap_ctx.allocator_data = 0;
   
-  Arena scratch = make_temp_memory(malloc(kilobytes(32)), kilobytes(32));
-  heap_ctx.temp_memory = &scratch;
+  Arena scratch = make_scratch_memory(malloc(kilobytes(32)), kilobytes(32));
+  heap_ctx.scratch_memory = &scratch;
   
   push_context(heap_ctx);
   
@@ -634,6 +634,9 @@ int CALLBACK WinMain(HINSTANCE instance,
             case VK_UP:
             win32_handle_button(&game_input.move_up, key_is_down);
             break;
+            case VK_DOWN:
+            win32_handle_button(&game_input.move_down, key_is_down);
+            break;
             case VK_SPACE:
             win32_handle_button(&game_input.start, key_is_down);
             break;
@@ -668,7 +671,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     sprintf_s(buffer, 256, "%.4f ms  %d samples\n", time_used*1000.0f, state.game_sound_buffer.count);
     OutputDebugStringA(buffer);
     
-    temp_clear();
+    scratch_clear();
     SwapBuffers(device_context);
   }
   

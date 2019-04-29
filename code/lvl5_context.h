@@ -86,7 +86,7 @@ typedef struct {
   Allocator *allocator;
   void *allocator_data;
   
-  Arena *temp_memory;
+  Arena *scratch_memory;
 } Context;
 
 
@@ -108,7 +108,7 @@ void pop_context() {
   __global_context_count--;
 }
 
-Arena make_temp_memory(void *data, u64 capacity) {
+Arena make_scratch_memory(void *data, u64 capacity) {
   Arena result;
   arena_init(&result, data, capacity);
   return result;
@@ -140,21 +140,21 @@ void free(void *ptr) {
 
 
 
-#define temp_alloc_struct(T, align) (T *)temp_alloc(sizeof(T), align)
-#define temp_alloc_array(T, count, align) (T *)temp_alloc(sizeof(T)*(count), align)
+#define scratch_alloc_struct(T, align) (T *)scratch_alloc(sizeof(T), align)
+#define scratch_alloc_array(T, count, align) (T *)scratch_alloc(sizeof(T)*(count), align)
 
 
-byte *temp_alloc(u64 size, u64 align) {
+byte *scratch_alloc(u64 size, u64 align) {
   Context ctx = get_context();
   byte *result = arena_allocator(size, 0, 0, align, Allocator_Mode_ALLOC,
-                                 ctx.temp_memory);
+                                 ctx.scratch_memory);
   return result;
 }
 
 
-void temp_clear() {
+void scratch_clear() {
   Context ctx = get_context();
-  ctx.temp_memory->size = 0;
+  ctx.scratch_memory->size = 0;
 }
 
 #define LVL5_CONTEXT

@@ -61,17 +61,17 @@ String substring(String s, u32 begin, u32 end) {
   return result;
 }
 
-String temp_concat(String a, String b) {
+String scratch_concat(String a, String b) {
   String result;
-  result.data = (char *)temp_alloc(a.count + b.count, 4);
+  result.data = (char *)scratch_alloc(a.count + b.count, 4);
   result.count = a.count + b.count;
   copy_memory_slow(result.data, a.data, a.count);
   copy_memory_slow(result.data + a.count, b.data, b.count);
   return result;
 }
 
-char *temp_c_string(String a) {
-  char *result = (char *)temp_alloc(a.count + 1, 4);
+char *scratch_c_string(String a) {
+  char *result = (char *)scratch_alloc(a.count + 1, 4);
   copy_memory_slow(result, a.data, a.count);
   result[a.count] = '\0';
   return result;

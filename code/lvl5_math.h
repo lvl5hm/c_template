@@ -40,7 +40,12 @@ i16 abs_i16(i16 a) {
   return result;
 }
 
-
+f32 sign_f32(f32 a) {
+  f32 result = 0;
+  if (a > 0) result = 1;
+  if (a < 0) result = -1;
+  return result;
+}
 
 
 // v2

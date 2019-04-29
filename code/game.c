@@ -117,19 +117,23 @@ Render_Item *push_render_item_(Render_Group *group, Render_Type type) {
   Render_Item *item = group->items + group->item_count++;
   item->type = type;
   item->matrix = group->matrix;
+  item->color = group->color;
   return item;
 }
 
 void push_rect(Render_Group *group, rect2 rect, v4 color) {
   Render_Rect *item = push_render_item(group, Rect);
   item->rect = rect;
-  item->color = color;
 }
 
-void push_sprite(Render_Group *group, Sprite sprite, v4 color) {
+void push_sprite(Render_Group *group, Sprite sprite, Transform t) {
+  render_save(group);
+  render_transform(group, t);
+  render_translate(group, v2_to_v3(v2_mul_s(sprite.origin, -1), 0));
+  
   Render_Sprite *item = push_render_item(group, Sprite);
-  item->color = color;
   item->sprite = sprite;
+  render_restore(group);
 }
 
 
@@ -141,13 +145,12 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state, gl_Funcs gl) {
   gl.GenBuffers(1, &renderer->instance_vbo);
   gl.GenVertexArrays(1, &renderer->vao);
   
+  // NOTE(lvl5): data layout
   gl.BindVertexArray(renderer->vao);
   gl.BindBuffer(GL_ARRAY_BUFFER, renderer->vertex_vbo);
   gl.VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Quad_Vertex), (void *)offsetof(Quad_Vertex, p));
   gl.EnableVertexAttribArray(0);
   
-  
-  // NOTE(lvl5): data layout
   u64 v4_size = sizeof(v4);
   u64 model_offset = offsetof(Quad_Instance, model);
   
@@ -167,8 +170,7 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state, gl_Funcs gl) {
                          (void *)offsetof(Quad_Instance, tex_scale));
   gl.VertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
                          (void *)offsetof(Quad_Instance, color));
-  gl.VertexAttribPointer(8, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
-                         (void *)offsetof(Quad_Instance, origin));
+  
   gl.EnableVertexAttribArray(1);
   gl.EnableVertexAttribArray(2);
   gl.EnableVertexAttribArray(3);
@@ -176,7 +178,6 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state, gl_Funcs gl) {
   gl.EnableVertexAttribArray(5);
   gl.EnableVertexAttribArray(6);
   gl.EnableVertexAttribArray(7);
-  gl.EnableVertexAttribArray(8);
   
   gl.VertexAttribDivisor(1, 1);
   gl.VertexAttribDivisor(2, 1);
@@ -185,7 +186,6 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state, gl_Funcs gl) {
   gl.VertexAttribDivisor(5, 1);
   gl.VertexAttribDivisor(6, 1);
   gl.VertexAttribDivisor(7, 1);
-  gl.VertexAttribDivisor(8, 1);
   gl.BindVertexArray(null);
   
   
@@ -237,14 +237,17 @@ void render_group_init(Render_Group *group, i32 item_capacity, v2 screen_size) {
   group->screen_size = screen_size;
   group->matrix = mat4x4_identity();//transform_get_matrix(transform_default());
   group->item_capacity = item_capacity;
+  group->transform_stack_count = 0;
 }
 
 void render_group_output(State *state, gl_Funcs gl, Render_Group *group, Quad_Renderer *renderer) {
+  assert(group->transform_stack_count == 0);
+  
   if (group->item_count != 0) {
     Quad_Instance *instances = 0;
     sb_reserve(instances, group->item_count, false);
     
-    TextureAtlas *atlas = 0;
+    Texture_Atlas *atlas = 0;
     
     for (i32 item_index = 0; item_index < group->item_count; item_index++) {
       Render_Item *item = group->items + item_index;
@@ -260,8 +263,7 @@ void render_group_output(State *state, gl_Funcs gl, Render_Group *group, Quad_Re
           inst.model = model_m;
           inst.tex_offset = tex_rect.min;
           inst.tex_scale = rect2_get_size(tex_rect);
-          inst.color = item->Sprite.color;
-          inst.origin = sprite.origin;
+          inst.color = item->color;
           
           sb_push(instances, inst);
         } break;
@@ -300,9 +302,9 @@ Bitmap make_empty_bitmap(i32 width, i32 height) {
   return result;
 }
 
-TextureAtlas make_texture_atlas_from_folder(Platform platform, State *state,  String folder) {
+Texture_Atlas make_texture_atlas_from_folder(Platform platform, State *state,  String folder) {
   File_List dir = platform.get_files_in_folder(folder);
-  TextureAtlas result = {0};
+  Texture_Atlas result = {0};
   result.sprite_count = dir.count;
   result.rects = alloc_array(rect2, dir.count, 4);
   
@@ -315,7 +317,7 @@ TextureAtlas make_texture_atlas_from_folder(Platform platform, State *state,  St
   
   for (i32 file_index = 0; file_index < dir.count; file_index++) {
     String file_name = dir.files[file_index];
-    String full_name = temp_concat(folder, temp_concat(const_string("\\"), file_name));
+    String full_name = scratch_concat(folder, scratch_concat(const_string("\\"), file_name));
     Bitmap sprite_bmp = load_bmp(platform, full_name);
     bitmaps[file_index] = sprite_bmp;
     
@@ -355,99 +357,68 @@ TextureAtlas make_texture_atlas_from_folder(Platform platform, State *state,  St
 
 void draw_robot(State *state, Render_Group *group, f32 body_x_t) {
   f32 leg_x = 0.1f;
-  v2 leg_origin = V2(0, 1);
   
-  mat4x4 old = group->matrix;
-  
+  render_save(group);
   {
     Animation_Instance *inst = &state->right_leg_anim;
     Animation_Frame frame = animation_get_frame(inst);
     
-    Sprite spr;
-    spr.atlas = &state->atlas;
-    spr.index = 1;
-    spr.origin = leg_origin;
+    Transform t = {0};
+    t.p = v3_add(V3(leg_x, 0, 0), frame.t.p);
+    t.scale = v3_hadamard(V3(0.25f, 0.25f, 1), frame.t.scale);
+    t.angle = frame.t.angle;
     
-    Transform sprite_transform;
-    sprite_transform.p = v3_add(V3(leg_x, 0, 0), frame.t.p);
-    sprite_transform.scale = v3_hadamard(V3(0.25f, 0.25f, 1), frame.t.scale);
-    sprite_transform.angle = frame.t.angle;
-    v4 sprite_color = frame.color;
-    
-    old = group->matrix; {
-      render_transform(group, sprite_transform);
-      push_sprite(group, spr, sprite_color);
-    } group->matrix = old;
+    push_sprite(group, state->spr_robot_leg, t);
   }
   
   
-  old = group->matrix;
+  render_restore(group);
+  
+  render_save(group);
   render_scale(group, V3(-1, 1, 1));
   
   {
     Animation_Instance *inst = &state->left_leg_anim;
     Animation_Frame frame = animation_get_frame(inst);
     
-    Sprite spr;
-    spr.atlas = &state->atlas;
-    spr.index = 1;
-    spr.origin = leg_origin;
+    Transform t = {0};
+    t.p = v3_add(V3(leg_x, 0, 0),
+                 v3_hadamard(frame.t.p, V3(-1, 1, 1)));
+    t.scale = v3_hadamard(V3(0.25f, 0.25f, 1), frame.t.scale);
+    t.angle = frame.t.angle;
     
-    Transform sprite_transform;
-    sprite_transform.p = v3_add(V3(leg_x, 0, 0), frame.t.p);
-    sprite_transform.p.x -= frame.t.p.x*2;
-    
-    sprite_transform.scale = v3_hadamard(V3(0.25f, 0.25f, 1), frame.t.scale);
-    sprite_transform.angle = frame.t.angle;
-    v4 sprite_color = frame.color;
-    
-    render_transform(group, sprite_transform);
-    push_sprite(group, spr, sprite_color);
+    push_sprite(group, state->spr_robot_leg, t);
   }
   
-  group->matrix = old;
+  render_restore(group);
   
   
-  old = group->matrix;
+  render_save(group);
   render_rotate(group, sin_f32(body_x_t*0.5f)*0.2f);
   render_translate(group, V3(0, 0.3f, 0));
   
   {
-    Sprite spr;
-    spr.atlas = &state->atlas;
-    spr.index = 2;
-    spr.origin = V2(0.5f, 0.5f);
-    Transform sprite_transform;
-    sprite_transform.p = V3(0, 0, 0);
-    sprite_transform.scale = V3(0.5f, 0.75f, 1);
-    sprite_transform.angle = 0;
-    
-    v4 sprite_color = V4(1, 1, 1, 1);
-    
-    mat4x4 old = group->matrix;
-    render_transform(group, sprite_transform);
-    push_sprite(group, spr, sprite_color);
-    group->matrix = old;
+    Transform t = {0};
+    t.scale = V3(0.5f, 0.75f, 1);
+    push_sprite(group, state->spr_robot_eye, t);
   }
   
   {
-    Sprite spr;
-    spr.atlas = &state->atlas;
-    spr.index = 0;
-    spr.origin = V2(0.5f, 0.5f);
-    Transform sprite_transform;
-    sprite_transform.p = V3(sin_f32(body_x_t*0.2f)*0.1f, 0, 0);
-    sprite_transform.scale = V3(0.2f, 0.2f, 1);
-    sprite_transform.angle = 0;
-    v4 sprite_color = V4(1, 1, 1, 1);
+    Transform t = {0};
+    t.scale = V3(0.2f, 0.2f, 1);
     
-    mat4x4 old = group->matrix;
-    render_transform(group, sprite_transform);
-    push_sprite(group, spr, sprite_color);
-    group->matrix = old;
+    push_sprite(group, state->spr_robot_torso, t);
   }
   
-  group->matrix = old;
+  render_restore(group);
+}
+
+Sprite make_sprite(Texture_Atlas *atlas, i32 index, v2 origin) {
+  Sprite result;
+  result.atlas = atlas;
+  result.index = index;
+  result.origin = origin;
+  return result;
 }
 
 extern GAME_UPDATE(game_update) {
@@ -468,7 +439,7 @@ extern GAME_UPDATE(game_update) {
   gl_Funcs gl = platform.gl;
   
   Context context = {0};
-  context.temp_memory = &state->scratch;
+  context.scratch_memory = &state->scratch;
   context.allocator = arena_allocator;
   context.allocator_data = &state->arena;
   push_context(context);
@@ -480,6 +451,10 @@ extern GAME_UPDATE(game_update) {
     state->shader_basic = gl_create_shader(gl, sources.vertex, sources.fragment);
     
     state->atlas = make_texture_atlas_from_folder(platform, state, const_string("sprites"));
+    
+    state->spr_robot_eye = make_sprite(&state->atlas, 2, V2(0.5f, 0.5f));
+    state->spr_robot_leg = make_sprite(&state->atlas, 1, V2(0, 1));
+    state->spr_robot_torso = make_sprite(&state->atlas, 0, V2(0.5f, 0.5f));
     
     gl.Enable(GL_BLEND);
     gl.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -548,12 +523,14 @@ extern GAME_UPDATE(game_update) {
     state->left_leg_anim.position = 0.5f;
     
     
+#if 0    
     Rand seed = make_random_sequence(214434334);
     for (i32 i = 0; i < 100; i++) {
       i32 player_index = add_entity_player(state);
       Entity *e = get_entity(state, player_index);
       e->t.p = V3(random_range(&seed, -10, 0), random_range(&seed, -3, 3), 0);
     }
+#endif
     
     
     state->is_initialized = true;
@@ -591,16 +568,26 @@ extern GAME_UPDATE(game_update) {
     
     switch (entity->type) {
       case Entity_Type_PLAYER: {
-        static f32 t_scale = 0;
-        t_scale += 0.01f;
-        entity->t.p = v3_add(entity->t.p, V3(0.01f, 0, 0));
-        f32 scale = 1;//(sin_f32(t_scale) + 1.0f)*3;
-        entity->t.scale = V3(scale, scale, 1);
+#define PLAYER_SPEED 0.03f
         
-        mat4x4 old = group.matrix;
-        group.matrix = transform_apply(group.matrix, entity->t);
+#if 1
+        f32 h_speed = (f32)(input.move_right.is_down - 
+                            input.move_left.is_down);
+        f32 v_speed = (f32)(input.move_up.is_down - 
+                            input.move_down.is_down);
+        v3 d_p = v3_mul_s(V3(h_speed, v_speed, 0), PLAYER_SPEED);
+        entity->t.p = v3_add(entity->t.p, d_p);
+        entity->t.scale = V3(sign_f32(h_speed), 1, 1);
+        if (entity->t.scale.x == 0) {
+          entity->t.scale.x = 1;
+        }
+#endif
+        
+        render_save(&group);
+        render_color(&group, V4(0, 1, 0, 1));
+        render_transform(&group, entity->t);
         draw_robot(state, &group, body_x_t);
-        group.matrix = old;
+        render_restore(&group);
       } break;
     }
   }
@@ -617,6 +604,6 @@ extern GAME_UPDATE(game_update) {
   
   arena_set_mark(&state->temp, render_memory);
   
-  temp_clear();
+  scratch_clear();
   pop_context();
 }

@@ -122,7 +122,7 @@ u32 gl_compile_shader(gl_Funcs gl, u32 type, String src)
   {
     i32 length;
     gl.GetShaderiv(id, GL_INFO_LOG_LENGTH, &length);
-    char *message = (char *)temp_alloc(length, 4);
+    char *message = (char *)scratch_alloc(length, 4);
     gl.GetShaderInfoLog(id, length, &length, message);
     assert(false);
   }
