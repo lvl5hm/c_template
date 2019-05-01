@@ -3,6 +3,7 @@
 #include "platform.h"
 #include "lvl5_math.h"
 #include "renderer.h"
+#include "lvl5_random.h"
 
 
 typedef enum {
@@ -91,6 +92,8 @@ typedef struct {
   
   Animation_Pack robot_parts[Robot_Part_COUNT];
   Animation_Instance robot_anim;
+  
+  Rand rand;
 } State;
 
 

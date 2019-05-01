@@ -3,6 +3,7 @@
 
 #include "lvl5_types.h"
 #include "lvl5_context.h"
+#include "stdarg.h"
 
 typedef struct {
   char *data;
@@ -93,6 +94,65 @@ b32 c_string_compare(char *a, char *b) {
   if (!*b) return true;
   return false;
 }
+
+String i32_to_string(i32 num)
+{
+  char *str = scratch_alloc_array(char, 11, 4);
+  String result = {0};
+  
+  i32 n = num;
+  
+  if (n == 0) {
+    str[10 - result.count] = '0';
+    result.count = 1;
+  } else {
+    if (n < 0) {
+      n *= -1;
+    }
+    
+    while (n != 0) {
+      str[10 - result.count] = '0' + (n % 10);
+      n /= 10;
+      result.count++;
+    }
+    
+    if (num < 0) {
+      str[10 - result.count] = '-';
+      result.count++;
+    }
+  }
+  
+  result.data = str + 11 - result.count;
+  return result;
+}
+
+
+String scratch_sprintf(String fmt, ...) {
+  String result = {0};
+  
+  va_list args;
+  va_start(args, fmt);
+  
+  
+  for (u32 i = 0; i < fmt.count; i++) {
+    if (fmt.data[i] == '%') {
+      if (fmt.data[i+1] == 'i') {
+        i32 num = va_arg(args, i32);
+        String str = i32_to_string(num);
+        
+        result = scratch_concat(result, str);
+        i += 1;
+      }
+    } else {
+      result = scratch_concat(result, make_string(&fmt.data[i], 1));
+    }
+  }
+  
+  va_end(args);
+  
+  return result;
+}
+
 
 #define LVL5_STRING
 #endif

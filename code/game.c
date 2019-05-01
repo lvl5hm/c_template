@@ -13,6 +13,7 @@
 #include "stb_truetype.h"
 
 
+
 typedef union {
   struct {
     byte r;
@@ -196,13 +197,23 @@ Texture_Atlas make_texture_atlas_from_folder(Platform platform, State *state,  S
   return result;
 }
 
+#define FONT_HEIGHT 32
+
 Bitmap get_codepoint_bitmap(stbtt_fontinfo font, char c) {
   i32 width;
   i32 height;
-  byte *single_bitmap = stbtt_GetCodepointBitmap(&font, 0, stbtt_ScaleForPixelHeight(&font, 40), c, &width, &height, 0, 0);
-  Bitmap bitmap = make_empty_bitmap(width, height);
+  f32 scale = stbtt_ScaleForPixelHeight(&font, 32);
+  byte *single_bitmap = stbtt_GetCodepointBitmap(&font, 0, scale, c, &width, &height, 0, 0);
+  Bitmap bitmap = make_empty_bitmap(width, 32);
   
-  u32 *row = (u32 *)bitmap.data + (height-1)*width;
+  i32 x0, y0, x1, y1;
+  stbtt_GetCodepointBitmapBox(&font, c, scale, scale, &x0,&y0,&x1,&y1);
+  
+  if (c == '-') {
+    x0 = 32;
+  }
+  
+  u32 *row = (u32 *)bitmap.data + (FONT_HEIGHT-1 + y1)*width;
   for (i32 y = 0; y < height; y++) {
     u32 *dst = row;
     for (i32 x = 0; x < width; x++) {
@@ -364,6 +375,7 @@ void draw_robot(State *state, Render_Group *group) {
     Transform t = frame.t;
     t.scale = V3(0.2f, 0.2f, 1);
     
+#if 0    
     static i32 index = 0;
     if ((index / 10) > 25) {
       index = 0;
@@ -373,9 +385,10 @@ void draw_robot(State *state, Render_Group *group) {
     letter.atlas = &state->font.atlas;
     letter.index = index / 10;
     letter.origin = V2(0.5f, 0.5f);
-    push_sprite(group, letter, t);
+#endif
+    push_sprite(group, state->spr_robot_eye, t);
     
-    index++;
+    //index++;
   }
   
   render_restore(group);
@@ -415,6 +428,8 @@ extern GAME_UPDATE(game_update) {
   push_context(context);
   
   if (!state->is_initialized) {
+    state->rand = make_random_sequence(2312323342);
+    
     // NOTE(lvl5): font stuff
     
     state->font = load_ttf(state, platform, const_string("Gugi-Regular.ttf"));
@@ -776,18 +791,20 @@ extern GAME_UPDATE(game_update) {
 #define PLAYER_SPEED 0.03f
         
         entity->t.scale = V3(1, 1, 1);
-        push_text(&group, state->font, const_string("foo bar"), entity->t);
+        i32_to_string(-5343);
+        //String text = scratch_sprintf(const_string("robot is at (%i, %i)"), (i32)entity->t.p.x, (i32)entity->t.p.y);
+        String text = const_string("         -53");
+        push_text(&group, state->font, text, entity->t);
         
-#if 0
+#if 1
         i32 h_speed = (input.move_right.is_down - 
                        input.move_left.is_down);
         i32 v_speed = (input.move_up.is_down - 
                        input.move_down.is_down);
         
         //entity->t.p = v2_to_v3(v2_sub(mouse_p_meters, half_screen_size_meters), 0);
-        //v3 d_p = v3_mul_s(V3((f32)h_speed, (f32)v_speed, 0), PLAYER_SPEED);
-        //entity->t.p = v3_add(entity->t.p, d_p);
-        entity->t.scale = V3(2, 2, 2);
+        v3 d_p = v3_mul_s(V3((f32)h_speed, (f32)v_speed, 0), PLAYER_SPEED);entity->t.p = v3_add(entity->t.p, d_p);
+        entity->t.scale = V3(1, 1, 1);
         if (entity->t.scale.x == 0) {
           entity->t.scale.x = 1;
         }
@@ -820,11 +837,6 @@ extern GAME_UPDATE(game_update) {
           inst->weights[Robot_Animation_WALK] = 0;
           inst->positions[Robot_Animation_WALK] = 0;
         }
-        
-        
-        if (inst->positions[Robot_Animation_IDLE] > 1) inst->positions[Robot_Animation_IDLE] = 0;
-        if (inst->positions[Robot_Animation_WALK] > 1) inst->positions[Robot_Animation_WALK] = 0;
-        
         
         
         render_save(&group);
