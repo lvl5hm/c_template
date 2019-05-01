@@ -9,6 +9,20 @@
 #include "lvl5_random.h"
 #include "renderer.c"
 
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "stb_truetype.h"
+
+
+typedef union {
+  struct {
+    byte r;
+    byte g;
+    byte b;
+    byte a;
+  };
+  u32 full;
+} Pixel;
+
 #pragma pack(push, 1)
 typedef struct {
   u32 info_header_size;
@@ -118,38 +132,30 @@ Bitmap make_empty_bitmap(i32 width, i32 height) {
   return result;
 }
 
-Texture_Atlas make_texture_atlas_from_folder(Platform platform, State *state,  String folder) {
-  File_List dir = platform.get_files_in_folder(folder);
+
+
+Texture_Atlas make_texture_atlas_from_bitmaps(Bitmap *bitmaps, i32 count) {
   Texture_Atlas result = {0};
-  result.sprite_count = dir.count;
-  result.rects = alloc_array(rect2, dir.count, 4);
+  result.sprite_count = count;
+  result.rects = alloc_array(rect2, count, 4);
   
   i32 max_width = 0;
   i32 total_height = 0;
   
-  u64 loaded_bitmaps_memory = arena_get_mark(&state->temp);
-  push_arena_context(&state->temp);
-  Bitmap *bitmaps = alloc_array(Bitmap, dir.count, 4);
-  
-  for (i32 file_index = 0; file_index < dir.count; file_index++) {
-    String file_name = dir.files[file_index];
-    String full_name = scratch_concat(folder, scratch_concat(const_string("\\"), file_name));
-    Bitmap sprite_bmp = load_bmp(platform, full_name);
-    bitmaps[file_index] = sprite_bmp;
-    
-    if (sprite_bmp.width > max_width) {
-      max_width = sprite_bmp.width;
+  for (i32 bitmap_index = 0; bitmap_index < count; bitmap_index++) {
+    Bitmap *bmp = bitmaps + bitmap_index;
+    if (bmp->width > max_width) {
+      max_width = bmp->width;
     }
-    total_height += sprite_bmp.height;
+    total_height += bmp->height;
   }
-  pop_context();
   
   result.bmp = make_empty_bitmap(max_width, total_height);
   i32 current_y = 0;
   
-  for (i32 file_index = 0; file_index < dir.count; file_index++) {
-    Bitmap *bmp = bitmaps + file_index;
-    rect2 *rect = result.rects + file_index;
+  for (i32 bitmap_index = 0; bitmap_index < count; bitmap_index++) {
+    Bitmap *bmp = bitmaps + bitmap_index;
+    rect2 *rect = result.rects + bitmap_index;
     
     rect->min = V2(0, (f32)current_y/(f32)total_height);
     rect->max = V2(bmp->width/(f32)max_width, rect->min.y + (f32)bmp->height/(f32)total_height);
@@ -166,11 +172,80 @@ Texture_Atlas make_texture_atlas_from_folder(Platform platform, State *state,  S
     current_y += bmp->height;
   }
   
+  return result;
+}
+
+Texture_Atlas make_texture_atlas_from_folder(Platform platform, State *state,  String folder) {
+  File_List dir = platform.get_files_in_folder(folder);
+  u64 loaded_bitmaps_memory = arena_get_mark(&state->temp);
+  
+  push_arena_context(&state->temp);
+  Bitmap *bitmaps = alloc_array(Bitmap, dir.count, 4);
+  
+  for (i32 file_index = 0; file_index < dir.count; file_index++) {
+    String file_name = dir.files[file_index];
+    String full_name = scratch_concat(folder, scratch_concat(const_string("\\"), file_name));
+    Bitmap sprite_bmp = load_bmp(platform, full_name);
+    bitmaps[file_index] = sprite_bmp;
+  }
+  pop_context();
+  
+  Texture_Atlas result = make_texture_atlas_from_bitmaps(bitmaps, dir.count); 
   arena_set_mark(&state->temp, loaded_bitmaps_memory);
   
   return result;
 }
 
+Bitmap get_codepoint_bitmap(stbtt_fontinfo font, char c) {
+  i32 width;
+  i32 height;
+  byte *single_bitmap = stbtt_GetCodepointBitmap(&font, 0, stbtt_ScaleForPixelHeight(&font, 40), c, &width, &height, 0, 0);
+  Bitmap bitmap = make_empty_bitmap(width, height);
+  
+  u32 *row = (u32 *)bitmap.data + (height-1)*width;
+  for (i32 y = 0; y < height; y++) {
+    u32 *dst = row;
+    for (i32 x = 0; x < width; x++) {
+      byte a = single_bitmap[y*width + x];
+      Pixel pixel;
+      pixel.r = 255;
+      pixel.g = 255;
+      pixel.b = 255;
+      pixel.a = a;
+      *dst++ = pixel.full;
+    }
+    row -= width;
+  }
+  
+  return bitmap;
+}
+
+Font load_ttf(State *state, Platform platform, String file_name) {
+  Font result;
+  
+  stbtt_fontinfo font;
+  Buffer font_file = platform.read_entire_file(file_name);
+  const unsigned char *font_buffer = (const unsigned char *)font_file.data;
+  stbtt_InitFont(&font, font_buffer, stbtt_GetFontOffsetForIndex(font_buffer, 0));
+  
+  u64 loaded_bitmaps_memory = arena_get_mark(&state->temp);
+  push_arena_context(&state->temp);
+  result.first_codepoint_index = '!';
+  
+  Bitmap *bitmaps = 0;
+  for (char ch = result.first_codepoint_index; ch <= '~'; ch++) {
+    Bitmap bmp = get_codepoint_bitmap(font, ch);
+    sb_push(bitmaps, bmp);
+  }
+  
+  arena_set_mark(&state->temp, loaded_bitmaps_memory);
+  pop_context();
+  
+  Texture_Atlas atlas = make_texture_atlas_from_bitmaps(bitmaps, sb_count(bitmaps));
+  result.atlas = atlas;
+  
+  return result;
+}
 
 Animation_Frame animation_get_frame(Animation *anim, f32 main_position) {
   f32 position = main_position*anim->speed;
@@ -245,7 +320,6 @@ void draw_robot(State *state, Render_Group *group) {
   
   render_restore(group);
   
-#if  1
   render_save(group);
   render_scale(group, V3(-1, 1, 1));
   
@@ -269,7 +343,6 @@ void draw_robot(State *state, Render_Group *group) {
   }
   
   render_restore(group);
-#endif
   
   
   Animation_Frame frame = animation_pack_get_frame(state->robot_parts[Robot_Part_BODY],
@@ -281,6 +354,7 @@ void draw_robot(State *state, Render_Group *group) {
   {
     Transform t = {0};
     t.scale = V3(0.5f, 0.75f, 1);
+    
     push_sprite(group, state->spr_robot_torso, t);
   }
   
@@ -290,7 +364,18 @@ void draw_robot(State *state, Render_Group *group) {
     Transform t = frame.t;
     t.scale = V3(0.2f, 0.2f, 1);
     
-    push_sprite(group, state->spr_robot_eye, t);
+    static i32 index = 0;
+    if ((index / 10) > 25) {
+      index = 0;
+    }
+    
+    Sprite letter;
+    letter.atlas = &state->font.atlas;
+    letter.index = index / 10;
+    letter.origin = V2(0.5f, 0.5f);
+    push_sprite(group, letter, t);
+    
+    index++;
   }
   
   render_restore(group);
@@ -303,7 +388,6 @@ Sprite make_sprite(Texture_Atlas *atlas, i32 index, v2 origin) {
   result.origin = origin;
   return result;
 }
-
 
 
 
@@ -326,11 +410,15 @@ extern GAME_UPDATE(game_update) {
   
   Context context = {0};
   context.scratch_memory = &state->scratch;
-  context.allocator = arena_allocator;
   context.allocator_data = &state->arena;
+  context.allocator = arena_allocator;
   push_context(context);
   
   if (!state->is_initialized) {
+    // NOTE(lvl5): font stuff
+    
+    state->font = load_ttf(state, platform, const_string("Gugi-Regular.ttf"));
+    
     Buffer shader_src = platform.read_entire_file(const_string("basic.glsl"));
     gl_Parse_Result sources = gl_parse_glsl(buffer_to_string(shader_src));
     
@@ -372,7 +460,7 @@ extern GAME_UPDATE(game_update) {
         Animation_Frame frame1 = (Animation_Frame){
           0.33f,
           (Transform){
-            V3(0.12f, 0, 0), // p
+            V3(0.2f, 0, 0), // p
             V3(1, 1, 1), // scale
             PI*0.4, // angle
           },
@@ -382,7 +470,7 @@ extern GAME_UPDATE(game_update) {
         Animation_Frame frame2 = (Animation_Frame){
           0.66f,
           (Transform){
-            V3(0.15f, 0, 0), // p
+            V3(0.26f, 0, 0), // p
             V3(1, 1, 1), // scale
             0, // angle
           },
@@ -673,6 +761,12 @@ extern GAME_UPDATE(game_update) {
     render_group_init(&group, 100000, v2i_to_v2(screen_size));
   } pop_context();
   
+#if 0  
+  v2 screen_size_v2 = v2i_to_v2(screen_size);
+  v2 screen_size_meters = v2_div_s(screen_size_v2, PIXELS_PER_METER);
+  v2 half_screen_size_meters = v2_div_s(screen_size_meters, 2);
+  v2 mouse_p_meters = v2_div_s(input.mouse.p, PIXELS_PER_METER);
+#endif
   
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
     Entity *entity = get_entity(state, entity_index);
@@ -681,16 +775,25 @@ extern GAME_UPDATE(game_update) {
       case Entity_Type_PLAYER: {
 #define PLAYER_SPEED 0.03f
         
-#if 1
+        entity->t.scale = V3(1, 1, 1);
+        push_text(&group, state->font, const_string("foo bar"), entity->t);
+        
+#if 0
         i32 h_speed = (input.move_right.is_down - 
                        input.move_left.is_down);
         i32 v_speed = (input.move_up.is_down - 
                        input.move_down.is_down);
+        
+        //entity->t.p = v2_to_v3(v2_sub(mouse_p_meters, half_screen_size_meters), 0);
         //v3 d_p = v3_mul_s(V3((f32)h_speed, (f32)v_speed, 0), PLAYER_SPEED);
         //entity->t.p = v3_add(entity->t.p, d_p);
         entity->t.scale = V3(2, 2, 2);
         if (entity->t.scale.x == 0) {
           entity->t.scale.x = 1;
+        }
+        
+        if (input.mouse.left.is_down) {
+          h_speed = 1;
         }
         
         Animation_Instance *inst = &state->robot_anim;
@@ -719,19 +822,17 @@ extern GAME_UPDATE(game_update) {
         }
         
         
-#if 0        
         if (inst->positions[Robot_Animation_IDLE] > 1) inst->positions[Robot_Animation_IDLE] = 0;
         if (inst->positions[Robot_Animation_WALK] > 1) inst->positions[Robot_Animation_WALK] = 0;
-#endif
         
         
-#endif
         
         render_save(&group);
         //render_color(&group, V4(0, 1, 0, 1));
         render_transform(&group, entity->t);
         draw_robot(state, &group);
         render_restore(&group);
+#endif
       } break;
     }
   }

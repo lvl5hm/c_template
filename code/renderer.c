@@ -81,6 +81,39 @@ void push_sprite(Render_Group *group, Sprite sprite, Transform t) {
   render_restore(group);
 }
 
+void push_text(Render_Group *group, Font font, String text, Transform t) {
+  render_save(group);
+  render_transform(group, t);
+  
+  for (u32 char_index = 0; char_index < text.count; char_index++) {
+    char ch = text.data[char_index];
+    if (ch == ' ') {
+      render_translate(group, V3(0.1f, 0, 0));
+      continue;
+    }
+    
+    Sprite spr;
+    spr.index = ch - font.first_codepoint_index;
+    spr.origin = V2(0, 0);
+    spr.atlas = &font.atlas;
+    
+    rect2 rect = sprite_get_rect(spr);
+    v2 size_pixels = v2_hadamard(rect2_get_size(rect), V2((f32)spr.atlas->bmp.width, (f32)spr.atlas->bmp.height));
+    
+    v2 size_meters = v2_div_s(size_pixels, PIXELS_PER_METER);
+    
+    render_save(group);
+    render_scale(group, v2_to_v3(size_meters, 0));
+    
+    Render_Sprite *item = push_render_item(group, Sprite);
+    item->sprite = spr;
+    render_restore(group);
+    
+    render_translate(group, V3(size_meters.x, 0, 0));
+  }
+  
+  render_restore(group);
+}
 
 
 void quad_renderer_init(Quad_Renderer *renderer, State *state, gl_Funcs gl) {
@@ -201,7 +234,24 @@ void render_group_output(State *state, gl_Funcs gl, Render_Group *group, Quad_Re
         case Render_Type_Sprite: {
           Sprite sprite = item->Sprite.sprite;
           
-          atlas = sprite.atlas;
+          if (atlas && atlas != sprite.atlas) {
+            v2 screen_size_v2 = group->screen_size;
+            v2 screen_size_in_meters = v2_div_s(screen_size_v2, PIXELS_PER_METER);
+            v2 gl_units_per_meter = v2_mul_s(v2_invert(screen_size_in_meters), 2);
+            
+            Transform view_transform;
+            view_transform.p = V3(0, 0, 0);
+            view_transform.angle = 0;
+            view_transform.scale = v2_to_v3(gl_units_per_meter, 1.0f);
+            
+            mat4x4 view_matrix = transform_apply(mat4x4_identity(), view_transform);
+            
+            quad_renderer_draw(gl, renderer, &atlas->bmp, view_matrix, instances, sb_count(instances));
+            
+            sb_count(instances) = 0;
+          }
+          
+          
           mat4x4 model_m = item->state.matrix;
           rect2 tex_rect = sprite_get_rect(sprite);
           
@@ -212,6 +262,9 @@ void render_group_output(State *state, gl_Funcs gl, Render_Group *group, Quad_Re
           inst.color = item->state.color;
           
           sb_push(instances, inst);
+          
+          
+          atlas = sprite.atlas;
         } break;
         
         case Render_Type_Rect: {

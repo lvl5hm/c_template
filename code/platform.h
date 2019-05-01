@@ -25,6 +25,14 @@ typedef struct {
 } Button;
 
 typedef struct {
+  v2 p;
+  Button left;
+  Button right;
+} Mouse;
+
+typedef struct {
+  Mouse mouse;
+  
   union {
     Button buttons[5];
     struct {

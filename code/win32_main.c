@@ -608,11 +608,38 @@ int CALLBACK WinMain(HINSTANCE instance,
       b->went_down = false;
       b->went_up = false;
     }
+    game_input.mouse.left.went_up = false;
+    game_input.mouse.left.went_down = false;
+    game_input.mouse.right.went_up = false;
+    game_input.mouse.right.went_down = false;
+    
+    
+    
+    RECT window_rect;
+    GetWindowRect(window, &window_rect);
+    
+    POINT mouse_p;
+    GetCursorPos(&mouse_p);
+    game_input.mouse.p.x = (f32)(mouse_p.x - window_rect.left);
+    game_input.mouse.p.y = (f32)(window_rect.bottom - window_rect.top - mouse_p.y + window_rect.top);
     
     while (PeekMessage(&message, window, 0, 0, PM_REMOVE)) 
     {
       switch (message.message)
       {
+        case WM_LBUTTONDOWN: {
+          if (message.wParam & MK_RBUTTON)
+            win32_handle_button(&game_input.mouse.right, true);
+          else
+            win32_handle_button(&game_input.mouse.left, true);
+        } break;
+        case WM_LBUTTONUP: {
+          if (message.wParam & MK_RBUTTON)
+            win32_handle_button(&game_input.mouse.right, false);
+          else
+            win32_handle_button(&game_input.mouse.left, false);
+        } break;
+        
         case WM_KEYDOWN:
         case WM_KEYUP:
         case WM_SYSKEYDOWN:
@@ -635,6 +662,19 @@ int CALLBACK WinMain(HINSTANCE instance,
             win32_handle_button(&game_input.move_up, key_is_down);
             break;
             case VK_DOWN:
+            win32_handle_button(&game_input.move_down, key_is_down);
+            break;
+            
+            case 'A':
+            win32_handle_button(&game_input.move_left, key_is_down);
+            break;
+            case 'D':
+            win32_handle_button(&game_input.move_right, key_is_down);
+            break;
+            case 'W':
+            win32_handle_button(&game_input.move_up, key_is_down);
+            break;
+            case 'S':
             win32_handle_button(&game_input.move_down, key_is_down);
             break;
             case VK_SPACE:

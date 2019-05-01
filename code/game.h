@@ -60,6 +60,10 @@ typedef struct {
   f32 *positions;
 } Animation_Instance;
 
+typedef struct {
+  Texture_Atlas atlas;
+  char first_codepoint_index;
+} Font;
 
 typedef struct {
   b32 is_initialized;
@@ -76,6 +80,8 @@ typedef struct {
   Texture_Atlas atlas;
   Quad_Renderer renderer;
   
+  
+  Font font;
   
   Bitmap white_bitmap;
   
