@@ -47,6 +47,13 @@ f32 sign_f32(f32 a) {
   return result;
 }
 
+i32 sign_i32(i32 a) {
+  i32 result = 0;
+  if (a > 0) result = 1;
+  if (a < 0) result = -1;
+  return result;
+}
+
 
 // v2
 
@@ -286,6 +293,18 @@ v4 v4_div_s(v4 a, f32 s) {
 }
 
 
+// rotors
+typedef struct {
+  f32 dot;
+  f32 xy;
+} rotor2;
+
+typedef struct {
+  f32 dot;
+  f32 xy;
+  f32 xz;
+  f32 yz;
+} rotor3;
 
 // v2i
 
@@ -343,6 +362,8 @@ v2i v2i_div_s(v2i a, i32 s) {
   return result;
 }
 
+
+// mat2x2
 
 typedef union {
   f32 e[4];

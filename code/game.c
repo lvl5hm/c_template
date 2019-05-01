@@ -7,8 +7,7 @@
 #include "lvl5_context.h"
 #include "lvl5_stretchy_buffer.h"
 #include "lvl5_random.h"
-
-#define PIXELS_PER_METER 96
+#include "renderer.c"
 
 #pragma pack(push, 1)
 typedef struct {
@@ -110,189 +109,6 @@ void push_arena_context(Arena *arena) {
   push_context(ctx);
 }
 
-
-#define push_render_item(group, type) (Render_##type *)push_render_item_(group, Render_Type_##type)
-Render_Item *push_render_item_(Render_Group *group, Render_Type type) {
-  assert(group->item_count < group->item_capacity);
-  Render_Item *item = group->items + group->item_count++;
-  item->type = type;
-  item->matrix = group->matrix;
-  item->color = group->color;
-  return item;
-}
-
-void push_rect(Render_Group *group, rect2 rect, v4 color) {
-  Render_Rect *item = push_render_item(group, Rect);
-  item->rect = rect;
-}
-
-void push_sprite(Render_Group *group, Sprite sprite, Transform t) {
-  render_save(group);
-  render_transform(group, t);
-  render_translate(group, v2_to_v3(v2_mul_s(sprite.origin, -1), 0));
-  
-  Render_Sprite *item = push_render_item(group, Sprite);
-  item->sprite = sprite;
-  render_restore(group);
-}
-
-
-
-void quad_renderer_init(Quad_Renderer *renderer, State *state, gl_Funcs gl) {
-  renderer->shader = state->shader_basic;
-  
-  gl.GenBuffers(1, &renderer->vertex_vbo);
-  gl.GenBuffers(1, &renderer->instance_vbo);
-  gl.GenVertexArrays(1, &renderer->vao);
-  
-  // NOTE(lvl5): data layout
-  gl.BindVertexArray(renderer->vao);
-  gl.BindBuffer(GL_ARRAY_BUFFER, renderer->vertex_vbo);
-  gl.VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Quad_Vertex), (void *)offsetof(Quad_Vertex, p));
-  gl.EnableVertexAttribArray(0);
-  
-  u64 v4_size = sizeof(v4);
-  u64 model_offset = offsetof(Quad_Instance, model);
-  
-  gl.BindBuffer(GL_ARRAY_BUFFER, renderer->instance_vbo);
-  gl.VertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
-                         (void *)(model_offset+0*v4_size));
-  gl.VertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
-                         (void *)(model_offset+1*v4_size));
-  gl.VertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
-                         (void *)(model_offset+2*v4_size));
-  gl.VertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
-                         (void *)(model_offset+3*v4_size));
-  
-  gl.VertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
-                         (void *)offsetof(Quad_Instance, tex_offset));
-  gl.VertexAttribPointer(6, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
-                         (void *)offsetof(Quad_Instance, tex_scale));
-  gl.VertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
-                         (void *)offsetof(Quad_Instance, color));
-  
-  gl.EnableVertexAttribArray(1);
-  gl.EnableVertexAttribArray(2);
-  gl.EnableVertexAttribArray(3);
-  gl.EnableVertexAttribArray(4);
-  gl.EnableVertexAttribArray(5);
-  gl.EnableVertexAttribArray(6);
-  gl.EnableVertexAttribArray(7);
-  
-  gl.VertexAttribDivisor(1, 1);
-  gl.VertexAttribDivisor(2, 1);
-  gl.VertexAttribDivisor(3, 1);
-  gl.VertexAttribDivisor(4, 1);
-  gl.VertexAttribDivisor(5, 1);
-  gl.VertexAttribDivisor(6, 1);
-  gl.VertexAttribDivisor(7, 1);
-  gl.BindVertexArray(null);
-  
-  
-  // NOTE(lvl5): buffer data
-  Quad_Vertex vertices[4] = {
-    (Quad_Vertex){V3(0, 1, 0)},
-    (Quad_Vertex){V3(0, 0, 0)},
-    (Quad_Vertex){V3(1, 1, 0)},
-    (Quad_Vertex){V3(1, 0, 0)},
-  };
-  gl.BindBuffer(GL_ARRAY_BUFFER, renderer->vertex_vbo);
-  gl.BufferData(GL_ARRAY_BUFFER, array_count(vertices)*sizeof(Quad_Vertex), vertices, GL_STATIC_DRAW);
-  
-  
-  gl.GenTextures(1, &renderer->texture);
-  gl.BindTexture(GL_TEXTURE_2D, renderer->texture);
-  gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-}
-
-void quad_renderer_destroy(gl_Funcs gl, Quad_Renderer *renderer) {
-  gl.DeleteBuffers(1, &renderer->instance_vbo);
-  gl.DeleteBuffers(1, &renderer->vertex_vbo);
-  gl.DeleteVertexArrays(1, &renderer->vao);
-  gl.DeleteTextures(1, &renderer->texture);
-  zero_memory_slow(renderer, sizeof(Quad_Renderer));
-}
-
-void quad_renderer_draw(gl_Funcs gl, Quad_Renderer *renderer, Bitmap *bmp, mat4x4 model_mat, Quad_Instance *instances, u32 instance_count) {
-  gl.BindBuffer(GL_ARRAY_BUFFER, renderer->instance_vbo);
-  gl.BufferData(GL_ARRAY_BUFFER, instance_count*sizeof(Quad_Instance),
-                instances, GL_DYNAMIC_DRAW);
-  
-  gl.UseProgram(renderer->shader);
-  gl_set_uniform_mat4x4(gl, renderer->shader, "u_view", &model_mat, 1);
-  
-  gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bmp->width, bmp->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, bmp->data);
-  
-  gl.BindVertexArray(renderer->vao);
-  gl.DrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, instance_count);
-}
-
-
-
-
-void render_group_init(Render_Group *group, i32 item_capacity, v2 screen_size) {
-  group->items = alloc_array(Render_Item, item_capacity, 4);
-  group->item_count = 0;
-  group->screen_size = screen_size;
-  group->matrix = mat4x4_identity();//transform_get_matrix(transform_default());
-  group->item_capacity = item_capacity;
-  group->transform_stack_count = 0;
-}
-
-void render_group_output(State *state, gl_Funcs gl, Render_Group *group, Quad_Renderer *renderer) {
-  assert(group->transform_stack_count == 0);
-  
-  if (group->item_count != 0) {
-    Quad_Instance *instances = 0;
-    sb_reserve(instances, group->item_count, false);
-    
-    Texture_Atlas *atlas = 0;
-    
-    for (i32 item_index = 0; item_index < group->item_count; item_index++) {
-      Render_Item *item = group->items + item_index;
-      switch (item->type) {
-        case Render_Type_Sprite: {
-          Sprite sprite = item->Sprite.sprite;
-          
-          atlas = sprite.atlas;
-          mat4x4 model_m = item->matrix;
-          rect2 tex_rect = sprite_get_rect(sprite);
-          
-          Quad_Instance inst = {0};
-          inst.model = mat4x4_transpose(model_m);
-          inst.tex_offset = tex_rect.min;
-          inst.tex_scale = rect2_get_size(tex_rect);
-          inst.color = item->color;
-          
-          sb_push(instances, inst);
-        } break;
-        
-        case Render_Type_Rect: {
-          
-        } break;
-        
-        default: assert(false);
-      }
-    }
-    
-    v2 screen_size_v2 = group->screen_size;
-    v2 screen_size_in_meters = v2_div_s(screen_size_v2, PIXELS_PER_METER);
-    v2 gl_units_per_meter = v2_mul_s(v2_invert(screen_size_in_meters), 2);
-    
-    Transform view_transform;
-    view_transform.p = V3(0, 0, 0);
-    view_transform.angle = 0;
-    view_transform.scale = v2_to_v3(gl_units_per_meter, 1.0f);
-    
-    mat4x4 view_matrix = transform_apply(mat4x4_identity(), view_transform);
-    
-    quad_renderer_draw(gl, renderer, &atlas->bmp, view_matrix, instances, sb_count(instances));
-  }
-}
-
-
-
 Bitmap make_empty_bitmap(i32 width, i32 height) {
   Bitmap result;
   result.width = width;
@@ -355,13 +171,68 @@ Texture_Atlas make_texture_atlas_from_folder(Platform platform, State *state,  S
   return result;
 }
 
-void draw_robot(State *state, Render_Group *group, f32 body_x_t) {
+
+Animation_Frame animation_get_frame(Animation *anim, f32 main_position) {
+  f32 position = main_position*anim->speed;
+  position -= (i32)position;
+  
+  i32 prev_index = -1;
+  while ((prev_index < anim->frame_count) && (position > anim->frames[prev_index+1].position)) {
+    prev_index++;
+  }
+  
+  Animation_Frame result;
+  if (prev_index == -1) {
+    result = anim->frames[0];
+  } else if (prev_index == anim->frame_count) {
+    result = anim->frames[anim->frame_count-1];
+  } else {
+    Animation_Frame prev = anim->frames[prev_index];
+    Animation_Frame next = anim->frames[prev_index+1];
+    f32 c = (position - prev.position)/(next.position - prev.position);
+    
+    result.t.p = lerp_v3(prev.t.p, next.t.p, V3(c, c, c));
+    result.t.scale = lerp_v3(prev.t.scale, next.t.scale, V3(c, c, c));
+    result.t.angle = lerp_f32(prev.t.angle, next.t.angle, c);
+    result.color = lerp_v4(prev.color, next.color, V4(c, c, c, c));
+  }
+  
+  return result;
+}
+
+
+Animation_Frame animation_pack_get_frame(Animation_Pack pack, Animation_Instance inst) {
+  Animation_Frame result = {0};
+  
+  f32 total_weight = 0;
+  for (i32 anim_index = 0; anim_index < pack.animation_count; anim_index++) {
+    f32 weight = inst.weights[anim_index];
+    total_weight += weight;
+  }
+  
+  for (i32 anim_index = 0; anim_index < pack.animation_count; anim_index++) {
+    f32 weight = inst.weights[anim_index];
+    f32 position = inst.positions[anim_index];
+    Animation anim = pack.animations[anim_index];
+    Animation_Frame frame = animation_get_frame(&anim, position);
+    f32 coeff = weight/total_weight;
+    
+    result.t.p = v3_add(result.t.p, v3_mul_s(frame.t.p, coeff));
+    result.t.scale = v3_add(result.t.scale, v3_mul_s(frame.t.scale, coeff));
+    result.t.angle = result.t.angle + frame.t.angle*coeff;
+  }
+  
+  return result;
+}
+
+
+void draw_robot(State *state, Render_Group *group) {
   f32 leg_x = 0.1f;
   
   render_save(group);
   {
-    Animation_Instance *inst = &state->right_leg_anim;
-    Animation_Frame frame = animation_get_frame(inst);
+    Animation_Frame frame = animation_pack_get_frame(state->robot_parts[Robot_Part_RIGHT_LEG], 
+                                                     state->robot_anim);
     
     Transform t = {0};
     t.p = v3_add(V3(leg_x, 0, 0), frame.t.p);
@@ -374,12 +245,19 @@ void draw_robot(State *state, Render_Group *group, f32 body_x_t) {
   
   render_restore(group);
   
+#if  1
   render_save(group);
   render_scale(group, V3(-1, 1, 1));
   
   {
-    Animation_Instance *inst = &state->left_leg_anim;
-    Animation_Frame frame = animation_get_frame(inst);
+    Animation_Instance inst = state->robot_anim;
+    f32 *old_pos = inst.positions;
+    inst.positions = scratch_alloc_array(f32, 2, 4);
+    copy_memory_slow(inst.positions, old_pos, sizeof(f32)*2);
+    inst.positions[Robot_Animation_WALK] += 0.5f;
+    
+    Animation_Frame frame = animation_pack_get_frame(state->robot_parts[Robot_Part_RIGHT_LEG], 
+                                                     inst);
     
     Transform t = {0};
     t.p = v3_add(V3(leg_x, 0, 0),
@@ -391,23 +269,28 @@ void draw_robot(State *state, Render_Group *group, f32 body_x_t) {
   }
   
   render_restore(group);
+#endif
   
   
+  Animation_Frame frame = animation_pack_get_frame(state->robot_parts[Robot_Part_BODY],
+                                                   state->robot_anim);
   render_save(group);
-  render_rotate(group, sin_f32(body_x_t*0.5f)*0.2f);
-  render_translate(group, V3(0, 0.3f, 0));
+  render_translate(group, V3(0, 0.25f, 0));
+  render_transform(group, frame.t);
   
   {
     Transform t = {0};
     t.scale = V3(0.5f, 0.75f, 1);
-    push_sprite(group, state->spr_robot_eye, t);
+    push_sprite(group, state->spr_robot_torso, t);
   }
   
   {
-    Transform t = {0};
+    Animation_Frame frame = animation_pack_get_frame(state->robot_parts[Robot_Part_EYE],
+                                                     state->robot_anim);
+    Transform t = frame.t;
     t.scale = V3(0.2f, 0.2f, 1);
     
-    push_sprite(group, state->spr_robot_torso, t);
+    push_sprite(group, state->spr_robot_eye, t);
   }
   
   render_restore(group);
@@ -420,6 +303,9 @@ Sprite make_sprite(Texture_Atlas *atlas, i32 index, v2 origin) {
   result.origin = origin;
   return result;
 }
+
+
+
 
 extern GAME_UPDATE(game_update) {
   State *state = (State *)memory.data;
@@ -452,9 +338,9 @@ extern GAME_UPDATE(game_update) {
     
     state->atlas = make_texture_atlas_from_folder(platform, state, const_string("sprites"));
     
-    state->spr_robot_eye = make_sprite(&state->atlas, 2, V2(0.5f, 0.5f));
+    state->spr_robot_eye = make_sprite(&state->atlas, 0, V2(0.5f, 0.5f));
     state->spr_robot_leg = make_sprite(&state->atlas, 1, V2(0, 1));
-    state->spr_robot_torso = make_sprite(&state->atlas, 0, V2(0.5f, 0.5f));
+    state->spr_robot_torso = make_sprite(&state->atlas, 2, V2(0.5f, 0.5f));
     
     gl.Enable(GL_BLEND);
     gl.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -464,93 +350,321 @@ extern GAME_UPDATE(game_update) {
     add_entity(state, Entity_Type_PLAYER);
     
     
-    Animation a;
-    a.frames = 0;
-    sb_reserve(a.frames, 16, true);
-    
-    Animation_Frame frame0 = (Animation_Frame){
-      0,
-      (Transform){
-        V3(0, 0, 0), // p
-        V3(1, 1, 1), // scale
-        0, // angle
-      },
-      V4(1, 1, 1, 1),
-    };
-    
-    Animation_Frame frame1 = (Animation_Frame){
-      0.33f,
-      (Transform){
-        V3(0.12f, 0, 0), // p
-        V3(1, 1, 1), // scale
-        PI*0.4, // angle
-      },
-      V4(1, 1, 1, 1),
-    };
-    
-    Animation_Frame frame2 = (Animation_Frame){
-      0.66f,
-      (Transform){
-        V3(0.15f, 0, 0), // p
-        V3(1, 1, 1), // scale
-        0, // angle
-      },
-      V4(1, 1, 1, 1),
-    };
-    
-    Animation_Frame frame3 = (Animation_Frame){
-      1,
-      (Transform){
-        V3(0, 0, 0), // p
-        V3(1, 1, 1), // scale
-        0, // angle
-      },
-      V4(1, 1, 1, 1),
-    };
-    
-    
-    sb_push(a.frames, frame0);
-    sb_push(a.frames, frame1);
-    sb_push(a.frames, frame2);
-    sb_push(a.frames, frame3);
-    
-    a.frame_count = sb_count(a.frames);
-    state->robot_leg_animation = a;
-    
-    
-    state->left_leg_anim.anim = &state->robot_leg_animation;
-    state->right_leg_anim.anim = &state->robot_leg_animation;
-    state->left_leg_anim.position = 0.5f;
-    
-    
-#if 0    
-    Rand seed = make_random_sequence(214434334);
-    for (i32 i = 0; i < 100; i++) {
-      i32 player_index = add_entity_player(state);
-      Entity *e = get_entity(state, player_index);
-      e->t.p = V3(random_range(&seed, -10, 0), random_range(&seed, -3, 3), 0);
+    {
+      Animation_Pack *pack = state->robot_parts + Robot_Part_RIGHT_LEG;
+      pack->animation_count = 2;
+      pack->animations = alloc_array(Animation, pack->animation_count, 4);
+      {
+        Animation a;
+        a.frames = 0;
+        sb_reserve(a.frames, 16, true);
+        
+        Animation_Frame frame0 = (Animation_Frame){
+          0,
+          (Transform){
+            V3(0, 0, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        Animation_Frame frame1 = (Animation_Frame){
+          0.33f,
+          (Transform){
+            V3(0.12f, 0, 0), // p
+            V3(1, 1, 1), // scale
+            PI*0.4, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        Animation_Frame frame2 = (Animation_Frame){
+          0.66f,
+          (Transform){
+            V3(0.15f, 0, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        
+        sb_push(a.frames, frame0);
+        sb_push(a.frames, frame1);
+        sb_push(a.frames, frame2);
+        
+        frame0.position = 1.0f;
+        sb_push(a.frames, frame0);
+        
+        a.frame_count = sb_count(a.frames);
+        a.speed = 0.7f;
+        pack->animations[Robot_Animation_WALK] = a;
+      }
+      
+      {
+        Animation a;
+        a.frames = 0;
+        sb_reserve(a.frames, 16, true);
+        
+        Animation_Frame frame0 = (Animation_Frame){
+          0,
+          (Transform){
+            V3(0, 0, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        
+        Animation_Frame frame1 = (Animation_Frame){
+          0.5f,
+          (Transform){
+            V3(0, -0.08f, 0), // p
+            V3(1, 1, 1), // scale
+            0.2f, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        sb_push(a.frames, frame0);
+        sb_push(a.frames, frame1);
+        
+        frame0.position = 1.0f;
+        sb_push(a.frames, frame0);
+        a.frame_count = sb_count(a.frames);
+        a.speed = 1;
+        
+        pack->animations[Robot_Animation_IDLE] = a;
+      }
     }
-#endif
     
+    
+    {
+      Animation_Pack *pack = state->robot_parts + Robot_Part_BODY;
+      pack->animation_count = 2;
+      pack->animations = alloc_array(Animation, pack->animation_count, 4);
+      {
+        Animation a;
+        a.frames = 0;
+        sb_reserve(a.frames, 16, true);
+        
+        Animation_Frame frame0 = (Animation_Frame){
+          0,
+          (Transform){
+            V3(0.1f, 0, 0), // p
+            V3(1, 1, 1), // scale
+            0.2f, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        Animation_Frame frame1 = (Animation_Frame){
+          0.5f,
+          (Transform){
+            V3(0.1f, 0, 0), // p
+            V3(1, 1, 1), // scale
+            0.1f, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        sb_push(a.frames, frame0);
+        sb_push(a.frames, frame1);
+        
+        frame0.position = 1.0f;
+        sb_push(a.frames, frame0);
+        
+        a.frame_count = sb_count(a.frames);
+        a.speed = 0.7f;
+        pack->animations[Robot_Animation_WALK] = a;
+      }
+      
+      {
+        Animation a;
+        a.frames = 0;
+        sb_reserve(a.frames, 16, true);
+        
+        Animation_Frame frame0 = (Animation_Frame){
+          0,
+          (Transform){
+            V3(0, 0.05f, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        Animation_Frame frame1 = (Animation_Frame){
+          0.5f,
+          (Transform){
+            V3(0, -0.05f, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        
+        sb_push(a.frames, frame0);
+        sb_push(a.frames, frame1);
+        
+        frame0.position = 1.0f;
+        sb_push(a.frames, frame0);
+        a.frame_count = sb_count(a.frames);
+        a.speed = 1;
+        
+        pack->animations[Robot_Animation_IDLE] = a;
+      }
+    }
+    
+    
+    {
+      Animation_Pack *pack = state->robot_parts + Robot_Part_EYE;
+      pack->animation_count = 2;
+      pack->animations = alloc_array(Animation, pack->animation_count, 4);
+      {
+        Animation a;
+        a.frames = 0;
+        sb_reserve(a.frames, 16, true);
+        
+        Animation_Frame frame0 = (Animation_Frame){
+          0,
+          (Transform){
+            V3(0.07f, 0, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        Animation_Frame frame1 = (Animation_Frame){
+          0.5f,
+          (Transform){
+            V3(0.09f, 0, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        sb_push(a.frames, frame0);
+        sb_push(a.frames, frame1);
+        
+        frame0.position = 1.0f;
+        sb_push(a.frames, frame0);
+        
+        a.frame_count = sb_count(a.frames);
+        a.speed = 1.5f;
+        pack->animations[Robot_Animation_WALK] = a;
+      }
+      
+      {
+        Animation a;
+        a.frames = 0;
+        sb_reserve(a.frames, 16, true);
+        
+        Animation_Frame frame0 = (Animation_Frame){
+          0,
+          (Transform){
+            V3(0, 0, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        Animation_Frame frame1 = (Animation_Frame){
+          0.5f,
+          (Transform){
+            V3(0, 0, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        
+        Animation_Frame frame2 = (Animation_Frame){
+          0.55f,
+          (Transform){
+            V3(-0.1f, 0.07f, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        
+        Animation_Frame frame3 = (Animation_Frame){
+          0.7f,
+          (Transform){
+            V3(-0.1f, 0.07f, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        Animation_Frame frame4 = (Animation_Frame){
+          0.75f,
+          (Transform){
+            V3(-0.1f, 0.07f, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        
+        Animation_Frame frame5 = (Animation_Frame){
+          0.85f,
+          (Transform){
+            V3(0.07f, 0.03f, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        
+        Animation_Frame frame6 = (Animation_Frame){
+          0.95f,
+          (Transform){
+            V3(0.07f, 0.03f, 0), // p
+            V3(1, 1, 1), // scale
+            0, // angle
+          },
+          V4(1, 1, 1, 1),
+        };
+        
+        sb_push(a.frames, frame0);
+        sb_push(a.frames, frame1);
+        sb_push(a.frames, frame2);
+        sb_push(a.frames, frame3);
+        sb_push(a.frames, frame4);
+        sb_push(a.frames, frame5);
+        sb_push(a.frames, frame6);
+        
+        
+        frame0.position = 1.0f;
+        sb_push(a.frames, frame0);
+        a.frame_count = sb_count(a.frames);
+        a.speed = 0.1f;
+        
+        pack->animations[Robot_Animation_IDLE] = a;
+      }
+    }
+    
+    
+    Animation_Instance *inst = &state->robot_anim;
+    inst->weights = alloc_array(f32, Robot_Animation_COUNT, 4);
+    inst->positions = alloc_array(f32, Robot_Animation_COUNT, 4);
     
     state->is_initialized = true;
   }
   
-  f32 anim_speed = 0.02f;
-  {
-    Animation_Instance *inst = &state->right_leg_anim;
-    inst->position += anim_speed;
-    if (inst->position > 1) {
-      inst->position = 0;
-    }
-  }
-  {
-    Animation_Instance *inst = &state->left_leg_anim;
-    inst->position += anim_speed;
-    if (inst->position > 1) {
-      inst->position = 0;
-    }
-  }
   
   
   u64 render_memory = arena_get_mark(&state->temp);
@@ -560,9 +674,6 @@ extern GAME_UPDATE(game_update) {
   } pop_context();
   
   
-  static f32 body_x_t = 0;
-  body_x_t += 0.1f;
-  
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
     Entity *entity = get_entity(state, entity_index);
     
@@ -571,22 +682,55 @@ extern GAME_UPDATE(game_update) {
 #define PLAYER_SPEED 0.03f
         
 #if 1
-        f32 h_speed = (f32)(input.move_right.is_down - 
-                            input.move_left.is_down);
-        f32 v_speed = (f32)(input.move_up.is_down - 
-                            input.move_down.is_down);
-        v3 d_p = v3_mul_s(V3(h_speed, v_speed, 0), PLAYER_SPEED);
-        entity->t.p = v3_add(entity->t.p, d_p);
-        entity->t.scale = V3(sign_f32(h_speed), 1, 1);
+        i32 h_speed = (input.move_right.is_down - 
+                       input.move_left.is_down);
+        i32 v_speed = (input.move_up.is_down - 
+                       input.move_down.is_down);
+        //v3 d_p = v3_mul_s(V3((f32)h_speed, (f32)v_speed, 0), PLAYER_SPEED);
+        //entity->t.p = v3_add(entity->t.p, d_p);
+        entity->t.scale = V3(2, 2, 2);
         if (entity->t.scale.x == 0) {
           entity->t.scale.x = 1;
         }
+        
+        Animation_Instance *inst = &state->robot_anim;
+        
+        if (h_speed || v_speed) {
+          inst->positions[Robot_Animation_WALK] += 0.03f;
+          inst->weights[Robot_Animation_WALK] += 0.05f;
+          inst->weights[Robot_Animation_IDLE] -= 0.05f;
+        } else {
+          inst->positions[Robot_Animation_IDLE] += 0.03f;
+          inst->weights[Robot_Animation_WALK] -= 0.05f;
+          inst->weights[Robot_Animation_IDLE] += 0.05f;
+        }
+        
+        if (inst->weights[Robot_Animation_IDLE] > 1) inst->weights[Robot_Animation_IDLE] = 1;
+        
+        if (inst->weights[Robot_Animation_IDLE] < 0) {
+          inst->weights[Robot_Animation_IDLE] = 0;
+          inst->positions[Robot_Animation_IDLE] = 0;
+        }
+        if (inst->weights[Robot_Animation_WALK] > 1) inst->weights[Robot_Animation_WALK] = 1;
+        
+        if (inst->weights[Robot_Animation_WALK] < 0) {
+          inst->weights[Robot_Animation_WALK] = 0;
+          inst->positions[Robot_Animation_WALK] = 0;
+        }
+        
+        
+#if 0        
+        if (inst->positions[Robot_Animation_IDLE] > 1) inst->positions[Robot_Animation_IDLE] = 0;
+        if (inst->positions[Robot_Animation_WALK] > 1) inst->positions[Robot_Animation_WALK] = 0;
+#endif
+        
+        
 #endif
         
         render_save(&group);
-        render_color(&group, V4(0, 1, 0, 1));
+        //render_color(&group, V4(0, 1, 0, 1));
         render_transform(&group, entity->t);
-        draw_robot(state, &group, body_x_t);
+        draw_robot(state, &group);
         render_restore(&group);
       } break;
     }
