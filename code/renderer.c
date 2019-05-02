@@ -67,10 +67,6 @@ Render_Item *push_render_item_(Render_Group *group, Render_Type type) {
   return item;
 }
 
-void push_rect(Render_Group *group, rect2 rect, v4 color) {
-  
-}
-
 void push_sprite(Render_Group *group, Sprite sprite, Transform t) {
   render_save(group);
   render_transform(group, t);
@@ -78,6 +74,23 @@ void push_sprite(Render_Group *group, Sprite sprite, Transform t) {
   
   Render_Sprite *item = push_render_item(group, Sprite);
   item->sprite = sprite;
+  render_restore(group);
+}
+
+void push_rect(Render_Group *group, rect2 rect, v4 color) {
+  Transform t;
+  t.angle = 0;
+  t.p = v2_to_v3(rect2_get_center(rect), 0);
+  t.scale = v2_to_v3(rect2_get_size(rect), 0);
+  
+  Sprite spr;
+  spr.atlas = group->debug_atlas;
+  spr.index = 0;
+  spr.origin = V2(0.5f, 0.5f);
+  
+  render_save(group);
+  render_color(group, color);
+  push_sprite(group, spr, t);
   render_restore(group);
 }
 
@@ -122,7 +135,7 @@ void push_text(Render_Group *group, Font font, String text, Transform t) {
 }
 
 
-void quad_renderer_init(Quad_Renderer *renderer, State *state, gl_Funcs gl) {
+void quad_renderer_init(Quad_Renderer *renderer, State *state) {
   renderer->shader = state->shader_basic;
   
   gl.GenBuffers(1, &renderer->vertex_vbo);
@@ -190,7 +203,7 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state, gl_Funcs gl) {
   gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 }
 
-void quad_renderer_destroy(gl_Funcs gl, Quad_Renderer *renderer) {
+void quad_renderer_destroy(Quad_Renderer *renderer) {
   gl.DeleteBuffers(1, &renderer->instance_vbo);
   gl.DeleteBuffers(1, &renderer->vertex_vbo);
   gl.DeleteVertexArrays(1, &renderer->vao);
@@ -198,7 +211,7 @@ void quad_renderer_destroy(gl_Funcs gl, Quad_Renderer *renderer) {
   zero_memory_slow(renderer, sizeof(Quad_Renderer));
 }
 
-void quad_renderer_draw(gl_Funcs gl, Quad_Renderer *renderer, Bitmap *bmp, mat4x4 model_mat, Quad_Instance *instances, u32 instance_count) {
+void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp, mat4x4 model_mat, Quad_Instance *instances, u32 instance_count) {
   gl.BindBuffer(GL_ARRAY_BUFFER, renderer->instance_vbo);
   gl.BufferData(GL_ARRAY_BUFFER, instance_count*sizeof(Quad_Instance),
                 instances, GL_DYNAMIC_DRAW);
@@ -215,7 +228,7 @@ void quad_renderer_draw(gl_Funcs gl, Quad_Renderer *renderer, Bitmap *bmp, mat4x
 
 
 
-void render_group_init(Render_Group *group, i32 item_capacity, v2 screen_size) {
+void render_group_init(State *state, Render_Group *group, i32 item_capacity, v2 screen_size) {
   group->items = alloc_array(Render_Item, item_capacity, 4);
   group->item_count = 0;
   group->screen_size = screen_size;
@@ -223,9 +236,10 @@ void render_group_init(Render_Group *group, i32 item_capacity, v2 screen_size) {
   group->state.color = V4(1, 1, 1, 1);
   group->item_capacity = item_capacity;
   group->state_stack_count = 0;
+  group->debug_atlas = &state->debug_atlas;
 }
 
-void render_group_output(State *state, gl_Funcs gl, Render_Group *group, Quad_Renderer *renderer) {
+void render_group_output(State *state, Render_Group *group, Quad_Renderer *renderer) {
   assert(group->state_stack_count == 0);
   
   if (group->item_count != 0) {
@@ -252,7 +266,7 @@ void render_group_output(State *state, gl_Funcs gl, Render_Group *group, Quad_Re
             
             mat4x4 view_matrix = transform_apply(mat4x4_identity(), view_transform);
             
-            quad_renderer_draw(gl, renderer, &atlas->bmp, view_matrix, instances, sb_count(instances));
+            quad_renderer_draw(renderer, &atlas->bmp, view_matrix, instances, sb_count(instances));
             
             sb_count(instances) = 0;
           }
@@ -292,6 +306,6 @@ void render_group_output(State *state, gl_Funcs gl, Render_Group *group, Quad_Re
     
     mat4x4 view_matrix = transform_apply(mat4x4_identity(), view_transform);
     
-    quad_renderer_draw(gl, renderer, &atlas->bmp, view_matrix, instances, sb_count(instances));
+    quad_renderer_draw(renderer, &atlas->bmp, view_matrix, instances, sb_count(instances));
   }
 }

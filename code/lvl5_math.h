@@ -123,6 +123,11 @@ v2 v2_i(i32 x, i32 y) {
   return result;
 }
 
+v2 v2_zero() {return V2(0, 0);}
+v2 v2_right() {return V2(1, 0);}
+v2 v2_left() {return V2(-1, 0);}
+v2 v2_up() {return V2(0, 1);}
+v2 v2_down() {return V2(0, -1);}
 
 
 // v3
@@ -211,6 +216,16 @@ v3 v2_to_v3(v2 a, f32 z) {
   result.z = z;
   return result;
 }
+
+
+v3 v3_zero() {return V3(0, 0, 0);}
+v3 v3_right() {return V3(1, 0, 0);}
+v3 v3_left() {return V3(-1, 0, 0);}
+v3 v3_up() {return V3(0, 1, 0);}
+v3 v3_down() {return V3(0, -1, 0);}
+v3 v3_forward() {return V3(0, 0, 1);}
+v3 v3_backward() {return V3(0, 0, -1);}
+
 
 // V4
 typedef union {
@@ -587,6 +602,11 @@ rect2 rect2_center_size(v2 center, v2 size) {
 
 v2 rect2_get_size(rect2 r) {
   v2 result = v2_sub(r.max, r.min);
+  return result;
+}
+
+v2 rect2_get_center(rect2 r) {
+  v2 result = v2_add(r.min, v2_mul_s(rect2_get_size(r), 0.5f));
   return result;
 }
 

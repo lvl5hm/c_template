@@ -87,6 +87,7 @@ typedef struct {
 } Render_Item;
 
 typedef struct {
+  Texture_Atlas *debug_atlas;
   Render_Item *items;
   i32 item_count;
   i32 item_capacity;

@@ -13,6 +13,99 @@
 #include "stb_truetype.h"
 
 
+/*
+TODO:
+
+---- ENGINE ----
+
+[ ] multithreading
+ -[ ] thread queues in the windows layer
+ -[ ] threaded things in the platform layer
+ -[ ] all threads can do low priority queue, but
+ they wake up from time to time to see if there's work in high priority
+ 
+ [ ] debug
+ -[ ] performance counters
+ -[ ] logging
+ -[ ] performance graphs
+ -[ ] something like interactive flame charts
+ -[ ] debug variables and widgets
+ -[ ] console?
+ -[ ] will probably have to do some introspection and metaprogramming
+ -[ ] needs to work with multithreading
+ -[ ] loading from a save point to debug a slow frame
+ 
+ [ ] animation
+ -[ ] clean up
+ -[ ] animation editor
+ -[ ] b-splines (bezier curves)
+ 
+ [ ] text rendering
+ -[ ] proper kerning and line spacing
+ -[ ] utf-8 support
+ -[ ] loading fonts from windows instead of stb??
+ 
+ [ ] windows layer
+ -[ ] proper opengl context creation for multisampling
+ 
+ [ ] renderer
+ -[ ] z-sorting
+ -[ ] more shader stuff (materials, etc)
+ -[ ] lighting
+ --[ ] normal maps
+ --[ ] phong shading
+ 
+ [ ] assets
+ -[ ] live reload
+ -[ ] asset file format
+ --[ ] bitmaps
+ --[ ] sounds
+ --[ ] fonts
+ --[ ] shaders
+ -[ ] asset builder
+ -[ ] streaming?
+ 
+ [ ] sounds
+ -[ ] basic mixer
+ -[ ] volume
+ -[ ] speed shifting
+ -[ ] SSE?
+ 
+ 
+ ---- GAME ----
+ [ ] basic player movement
+ [ ] player active abilities
+ [ ] ability rune examples
+ [ ] basic enemy AI and abilities
+ [ ] some basic GUI
+ -[ ] hp/mana
+ -[ ] gold/exp?
+ -[ ] abilities and cooldowns
+ -[ ] inventory and using runes
+ [ ] world (probably tiles)
+ [ ] buffs/debuffs
+ [ ] damage over time
+ [ ] auras
+ [ ] ranged projectiles and melee strikes (how do runes affect each?)
+ 
+ [ ] collision
+ -[ ] SAT
+ -[ ] tilemap collision
+ -[ ] collision rules?
+ -[ ] grid / quadtree
+ 
+ [ ] basic procedural generation
+ [ ] 5 enemy types
+ [ ] first level boss
+ [ ] sounds for abilities/enemies
+ [ ] sound position volume shifting
+ [ ] shops
+ [ ] using exp for leveling up abilities or adding stats?
+ [ ] damage/pick up popup text
+ 
+ 
+*/
+
 
 typedef union {
   struct {
@@ -407,14 +500,13 @@ extern GAME_UPDATE(game_update) {
   __global_context_stack = memory.context_stack;
   __global_context_count = memory.context_count;
   __global_context_capacity = memory.context_capacity;
+  gl = platform.gl;
   
   if (!state->is_initialized) {
     arena_init(&state->arena, memory.perm + sizeof(State), memory.perm_size - sizeof(State));
     arena_init(&state->scratch, memory.temp, SCRATCH_SIZE);
     arena_init(&state->temp, memory.temp + SCRATCH_SIZE, memory.temp_size - SCRATCH_SIZE);
   }
-  
-  gl_Funcs gl = platform.gl;
   
   Context context = {0};
   context.scratch_memory = &state->scratch;
@@ -437,6 +529,14 @@ extern GAME_UPDATE(game_update) {
     
     state->atlas = make_texture_atlas_from_folder(platform, state, const_string("sprites"));
     
+    Bitmap *bmp = &state->debug_atlas.bmp;
+    *bmp = make_empty_bitmap(1, 1);
+    ((u32 *)bmp->data)[0] = 0xFFFFFFFF;
+    state->debug_atlas.rects = alloc_array(rect2, 1, 0);
+    state->debug_atlas.rects[0] = rect2_min_max(V2(0, 0), V2(1, 1));
+    state->debug_atlas.sprite_count = 1;
+    
+    
     state->spr_robot_eye = make_sprite(&state->atlas, 0, V2(0.5f, 0.5f));
     state->spr_robot_leg = make_sprite(&state->atlas, 1, V2(0, 1));
     state->spr_robot_torso = make_sprite(&state->atlas, 2, V2(0.5f, 0.5f));
@@ -444,7 +544,7 @@ extern GAME_UPDATE(game_update) {
     gl.Enable(GL_BLEND);
     gl.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    quad_renderer_init(&state->renderer, state, gl);
+    quad_renderer_init(&state->renderer, state);
     add_entity(state, Entity_Type_NONE); // filler entity
     add_entity(state, Entity_Type_PLAYER);
     
@@ -452,12 +552,15 @@ extern GAME_UPDATE(game_update) {
     state->is_initialized = true;
   }
   
+  if (memory.is_reloaded) {
+    // NOTE(lvl5): transient memory can be destroyed at this point
+  }
   
   
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group group;
   push_arena_context(&state->temp); {
-    render_group_init(&group, 100000, v2i_to_v2(screen_size));
+    render_group_init(state, &group, 100000, v2i_to_v2(screen_size));
   } pop_context();
   
 #if 0  
@@ -526,8 +629,13 @@ extern GAME_UPDATE(game_update) {
         render_save(&group);
         //render_color(&group, V4(0, 1, 0, 1));
         render_transform(&group, entity->t);
+        
         render_color(&group, V4(0, 1, 1, 1));
         draw_robot(state, &group);
+        
+        push_rect(&group, rect2_center_size(V2(0, 0), V2(1, 1)), V4(1, 0, 1, 1));
+        
+        
         render_restore(&group);
 #endif
       } break;
@@ -539,7 +647,7 @@ extern GAME_UPDATE(game_update) {
   gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   gl.Clear(GL_COLOR_BUFFER_BIT);
   push_arena_context(&state->temp); {
-    render_group_output(state, gl, &group, &state->renderer);
+    render_group_output(state, &group, &state->renderer);
   } pop_context();
   
   

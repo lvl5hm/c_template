@@ -119,6 +119,7 @@ typedef struct {
 } Platform;
 
 
+gl_Funcs gl;
 typedef GAME_UPDATE(Game_Update);
 
 

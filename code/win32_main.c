@@ -51,9 +51,9 @@ void *get_any_gl_func_address(const char *name) {
 
 
 gl_Funcs gl_load_functions() {
-  gl_Funcs gl = {0};
+  gl_Funcs funcs = {0};
   
-#define load_opengl_proc(name) *(u64 *)&(gl.name) = (u64)get_any_gl_func_address("gl"#name)
+#define load_opengl_proc(name) *(u64 *)&(funcs.name) = (u64)get_any_gl_func_address("gl"#name)
   
   load_opengl_proc(BindBuffer);
   load_opengl_proc(GenBuffers);
@@ -104,7 +104,7 @@ gl_Funcs gl_load_functions() {
   load_opengl_proc(Enable);
   load_opengl_proc(DeleteTextures);
   
-  return gl;
+  return funcs;
 }
 
 
@@ -611,10 +611,6 @@ int CALLBACK WinMain(HINSTANCE instance,
   
   push_context(heap_ctx);
   
-  //global_sound = win32_load_wav(const_string("bloop_00.wav"));
-  //global_sound = win32_load_wav(const_string("noragami.wav"));
-  
-  // NOTE(lvl5): windows init
   // NOTE(lvl5): windows init
   WNDCLASSA window_class = {0};
   window_class.style = CS_HREDRAW|CS_VREDRAW|CS_OWNDC;
@@ -677,7 +673,7 @@ int CALLBACK WinMain(HINSTANCE instance,
   if (!wglMakeCurrent(device_context, opengl_context)) return 0;
   
   
-  gl_Funcs gl = gl_load_functions();
+  gl = gl_load_functions();
   
   
   wglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
@@ -767,31 +763,35 @@ int CALLBACK WinMain(HINSTANCE instance,
       WIN32_FILE_ATTRIBUTE_DATA ignored;
       b32 lock_file_exists = GetFileAttributesExA(
         scratch_c_string(lock_path), GetFileExInfoStandard, &ignored);
-      if (!lock_file_exists) {
-        String dll_path = scratch_concat(build_dir,
-                                         const_string("game.dll"));
-        
-        u64 current_write_time = win32_get_last_write_time(dll_path);
-        if (current_write_time && last_game_dll_write_time != current_write_time) {
-          if (game_lib) {
-            FreeLibrary(game_lib);
-          }
-          
-          String copy_dll_path = 
-            scratch_concat(build_dir, const_string("game_temp.dll"));
-          
-          char *src = scratch_c_string(dll_path);
-          char *dst = scratch_c_string(copy_dll_path);
-          b32 copy_success = CopyFileA(src, dst, false);
-          assert(copy_success);
-          
-          game_lib = LoadLibraryA("game_temp.dll");
-          assert(game_lib);
-          game_update = (Game_Update *)GetProcAddress(game_lib, "game_update");
-          assert(game_update);
-          
-          last_game_dll_write_time = current_write_time;
+      String dll_path = scratch_concat(build_dir,
+                                       const_string("game.dll"));
+      
+      u64 current_write_time = win32_get_last_write_time(dll_path);
+      if (!lock_file_exists && 
+          current_write_time &&
+          last_game_dll_write_time != current_write_time) {
+        if (game_lib) {
+          FreeLibrary(game_lib);
         }
+        
+        String copy_dll_path = 
+          scratch_concat(build_dir, const_string("game_temp.dll"));
+        
+        char *src = scratch_c_string(dll_path);
+        char *dst = scratch_c_string(copy_dll_path);
+        b32 copy_success = CopyFileA(src, dst, false);
+        assert(copy_success);
+        
+        game_lib = LoadLibraryA("game_temp.dll");
+        assert(game_lib);
+        game_update = (Game_Update *)GetProcAddress(game_lib, "game_update");
+        assert(game_update);
+        
+        last_game_dll_write_time = current_write_time;
+        
+        game_memory.is_reloaded = true;
+      } else {
+        game_memory.is_reloaded = false;
       }
     }
     

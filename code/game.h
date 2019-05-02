@@ -89,7 +89,7 @@ typedef struct {
   
   Font font;
   
-  Bitmap white_bitmap;
+  Texture_Atlas debug_atlas;
   
   Sprite spr_robot_torso;
   Sprite spr_robot_leg;
