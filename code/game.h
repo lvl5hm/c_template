@@ -62,8 +62,14 @@ typedef struct {
 } Animation_Instance;
 
 typedef struct {
+  v2 origin;
+} Codepoint_Metrics;
+
+typedef struct {
   Texture_Atlas atlas;
   char first_codepoint_index;
+  Codepoint_Metrics *metrics;
+  i32 codepoint_count;
 } Font;
 
 typedef struct {

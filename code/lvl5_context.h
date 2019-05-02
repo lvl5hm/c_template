@@ -16,6 +16,20 @@ u64 align, Allocator_Mode mode, void *allocator_data)
 typedef ALLOCATOR(Allocator);
 
 
+typedef struct {
+  Allocator *allocator;
+  void *allocator_data;
+  
+  Arena *scratch_memory;
+} Context;
+
+
+// TODO(lvl5): make this multithreaded
+globalvar Context *__global_context_stack;
+globalvar u32 __global_context_count;
+globalvar u32 __global_context_capacity;
+
+
 void copy_memory_slow(void *dst, void *src, u64 size) {
   for (u64 i = 0; i < size; i++) {
     ((byte *)dst)[i] = ((byte *)src)[i];
@@ -81,18 +95,11 @@ ALLOCATOR(dynamic_allocator) {
   return result;
 }
 
-
-typedef struct {
-  Allocator *allocator;
-  void *allocator_data;
-  
-  Arena *scratch_memory;
-} Context;
-
-
-// TODO(lvl5): make this multithreaded
-Context __global_context_stack[64];
-u32 __global_context_count;
+void init_context_stack(void *memory, u32 capacity) {
+  __global_context_capacity = capacity;
+  __global_context_stack = (Context *)memory;
+  __global_context_count = 0;
+}
 
 Context get_context() {
   Context result = __global_context_stack[__global_context_count-1];
@@ -100,7 +107,7 @@ Context get_context() {
 }
 
 void push_context(Context ctx) {
-  assert(__global_context_count < array_count(__global_context_stack));
+  assert(__global_context_count < __global_context_capacity);
   __global_context_stack[__global_context_count++] = ctx;
 }
 

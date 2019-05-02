@@ -19,8 +19,24 @@ typedef DIRECT_SOUND_CREATE(Direct_Sound_Create);
 #define TARGET_FPS 60
 
 
-void *get_any_gl_func_address(const char *name)
-{
+u64 win32_get_last_write_time(String file_name) {
+  WIN32_FIND_DATAA find_data;
+  HANDLE file_handle = FindFirstFileA(
+    scratch_c_string(file_name),
+    &find_data);
+  u64 result = 0;
+  if (file_handle != INVALID_HANDLE_VALUE) {
+    FindClose(file_handle);
+    FILETIME write_time = find_data.ftLastWriteTime;
+    
+    result = write_time.dwHighDateTime;
+    result = result << 32;
+    result = result | write_time.dwLowDateTime;
+  }
+  return result;
+}
+
+void *get_any_gl_func_address(const char *name) {
   void *p = (void *)wglGetProcAddress(name);
   if(p == 0 ||
      (p == (void*)0x1) || (p == (void*)0x2) || (p == (void*)0x3) ||
@@ -34,8 +50,7 @@ void *get_any_gl_func_address(const char *name)
 }
 
 
-gl_Funcs gl_load_functions()
-{
+gl_Funcs gl_load_functions() {
   gl_Funcs gl = {0};
   
 #define load_opengl_proc(name) *(u64 *)&(gl.name) = (u64)get_any_gl_func_address("gl"#name)
@@ -119,7 +134,74 @@ typedef struct {
 
 win32_State state;
 
+typedef struct {
+  HANDLE handle;
+  u64 size;
+  b32 no_errors;
+} win32_File;
 
+PLATFORM_OPEN_FILE(win32_open_file) {
+  HANDLE handle = CreateFileA((LPCSTR)scratch_c_string(file_name),
+                              GENERIC_READ,
+                              FILE_SHARE_READ,
+                              0,
+                              OPEN_EXISTING,
+                              FILE_ATTRIBUTE_NORMAL,
+                              0);
+  
+  win32_File *result = (win32_File *)malloc(sizeof(win32_File));
+  result->handle = INVALID_HANDLE_VALUE;
+  result->size = 0;
+  result->no_errors = false;
+  
+  if (handle != INVALID_HANDLE_VALUE)
+  {
+    LARGE_INTEGER file_size_li;
+    
+    if (GetFileSizeEx(handle, &file_size_li))
+    {
+      u64 file_size = file_size_li.QuadPart;
+      
+      result->handle = handle;
+      result->size = file_size;
+      result->no_errors = true;
+    }
+  }
+  
+  return (File_Handle)result;
+}
+
+
+PLATFORM_FILE_ERROR(win32_file_error) {
+  ((win32_File *)file)->no_errors = false;
+}
+
+PLATFORM_FILE_HAS_NO_ERRORS(win32_file_has_no_errors) {
+  b32 result = ((win32_File *)file)->no_errors;
+  return result;
+}
+
+PLATFORM_READ_FILE(win32_read_file) {
+  if (win32_file_has_no_errors(file)) {
+    OVERLAPPED overlapped = {0};
+    overlapped.Offset = (u32)((offset >> 0) & 0xFFFFFFFF);
+    overlapped.OffsetHigh = (u32)((offset >> 32) & 0xFFFFFFFF);
+    
+    DWORD bytes_read;
+    ReadFile(
+      ((win32_File *)file)->handle,
+      dst,
+      (u32)size,
+      &bytes_read,
+      &overlapped);
+    assert(bytes_read == size);
+  }
+}
+
+PLATFORM_CLOSE_FILE(win32_close_file) {
+  CloseHandle(((win32_File *)file)->handle);
+  free(file);
+}
 
 u32 win32_sound_get_multisample_size(win32_Sound *snd) {
   u32 result = snd->single_sample_size*snd->channel_count;
@@ -193,9 +275,7 @@ LPDIRECTSOUNDBUFFER win32_init_dsound(HWND window, win32_Sound *win32_sound) {
 }
 
 
-
-String win32_get_work_dir()
-{
+String win32_get_build_dir() {
   String full_path;
   full_path.data = (char *)scratch_alloc(MAX_PATH, 4);
   full_path.count = GetModuleFileNameA(0, full_path.data, MAX_PATH);
@@ -204,9 +284,14 @@ String win32_get_work_dir()
   u32 last_slash_index = find_last_index(full_path, const_string("\\"));
   String result = substring(full_path, 0, last_slash_index + 1);
   
-  String path_end = const_string("../data/");
+  return result;
+}
+
+String win32_get_work_dir() {
+  String build_dir = win32_get_build_dir();
+  String path_end = const_string("..\\data\\");
   
-  result = scratch_concat(result, path_end);
+  String result = scratch_concat(build_dir, path_end);
   return result;
 }
 
@@ -410,6 +495,7 @@ File_List win32_get_files_in_folder(String str) {
   heap_ctx.allocator = heap_allocator;
   File_List result = {0};
   
+  // TODO(lvl5): this needs to be freed at some point
   push_context(heap_ctx); {
     sb_reserve(result.files, 8, true);
     
@@ -456,6 +542,9 @@ int CALLBACK WinMain(HINSTANCE instance,
   
   printf("Hello, world! %zd\n", sizeof(i64));
   
+  
+  init_context_stack(malloc(sizeof(Context)*64), 64);
+  
   Context heap_ctx;
   heap_ctx.allocator = heap_allocator;
   heap_ctx.allocator_data = 0;
@@ -464,13 +553,6 @@ int CALLBACK WinMain(HINSTANCE instance,
   heap_ctx.scratch_memory = &scratch;
   
   push_context(heap_ctx);
-  
-  
-  HMODULE game_lib = LoadLibraryA("game.dll");
-  assert(game_lib);
-  Game_Update *game_update = (Game_Update *)GetProcAddress(game_lib, "game_update");
-  assert(game_update);
-  
   
   //global_sound = win32_load_wav(const_string("bloop_00.wav"));
   //global_sound = win32_load_wav(const_string("noragami.wav"));
@@ -583,6 +665,10 @@ int CALLBACK WinMain(HINSTANCE instance,
   game_memory.size = gigabytes(1);
   game_memory.data = alloc(game_memory.size, 8);
   zero_memory_slow(game_memory.data, megabytes(8));
+  game_memory.context_stack = __global_context_stack;
+  game_memory.context_count = __global_context_count;
+  game_memory.context_capacity = __global_context_capacity;
+  
   
   game_Input game_input = {0};
   
@@ -596,9 +682,55 @@ int CALLBACK WinMain(HINSTANCE instance,
   platform.read_entire_file = win32_read_entire_file;
   platform.gl = gl;
   platform.get_files_in_folder = win32_get_files_in_folder;
+  platform.open_file = win32_open_file;
+  platform.file_error = win32_file_error;
+  platform.file_has_no_errors = win32_file_has_no_errors;
+  platform.read_file = win32_read_file;
+  platform.close_file = win32_close_file;
+  
+  
+  HMODULE game_lib = 0;
+  Game_Update *game_update = 0;
+  u64 last_game_dll_write_time = 0;
   
   MSG message;
   while (state.running) {
+    {
+      String build_dir = win32_get_build_dir();
+      String lock_path = scratch_concat(build_dir,
+                                        const_string("lock.tmp"));
+      WIN32_FILE_ATTRIBUTE_DATA ignored;
+      b32 lock_file_exists = GetFileAttributesExA(
+        scratch_c_string(lock_path), GetFileExInfoStandard, &ignored);
+      if (!lock_file_exists) {
+        String dll_path = scratch_concat(build_dir,
+                                         const_string("game.dll"));
+        
+        u64 current_write_time = win32_get_last_write_time(dll_path);
+        if (current_write_time && last_game_dll_write_time != current_write_time) {
+          if (game_lib) {
+            FreeLibrary(game_lib);
+          }
+          
+          String copy_dll_path = 
+            scratch_concat(build_dir, const_string("game_temp.dll"));
+          
+          char *src = scratch_c_string(dll_path);
+          char *dst = scratch_c_string(copy_dll_path);
+          b32 copy_success = CopyFileA(src, dst, false);
+          assert(copy_success);
+          
+          game_lib = LoadLibraryA("game_temp.dll");
+          assert(game_lib);
+          game_update = (Game_Update *)GetProcAddress(game_lib, "game_update");
+          assert(game_update);
+          
+          last_game_dll_write_time = current_write_time;
+        }
+      }
+    }
+    
+    
     f64 time_frame_start = win32_get_time();
     
     for (u32 button_index = 0; 
@@ -612,7 +744,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     game_input.mouse.left.went_down = false;
     game_input.mouse.right.went_up = false;
     game_input.mouse.right.went_down = false;
-    
     
     
     RECT window_rect;

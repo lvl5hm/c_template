@@ -92,9 +92,15 @@ void push_text(Render_Group *group, Font font, String text, Transform t) {
       continue;
     }
     
+    assert(ch >= font.first_codepoint_index && 
+           ch < font.first_codepoint_index + font.codepoint_count);
+    
+    i32 font_index = ch - font.first_codepoint_index;
+    Codepoint_Metrics metrics = font.metrics[font_index];
+    
     Sprite spr;
-    spr.index = ch - font.first_codepoint_index;
-    spr.origin = V2(0, 0);
+    spr.index = font_index;
+    spr.origin = metrics.origin;
     spr.atlas = &font.atlas;
     
     rect2 rect = sprite_get_rect(spr);
@@ -103,10 +109,10 @@ void push_text(Render_Group *group, Font font, String text, Transform t) {
     v2 size_meters = v2_div_s(size_pixels, PIXELS_PER_METER);
     
     render_save(group);
-    render_scale(group, v2_to_v3(size_meters, 0));
+    Transform letter_t = transform_default();
+    letter_t.scale = v2_to_v3(size_meters, 0);
+    push_sprite(group, spr, letter_t);
     
-    Render_Sprite *item = push_render_item(group, Sprite);
-    item->sprite = spr;
     render_restore(group);
     
     render_translate(group, V3(size_meters.x, 0, 0));

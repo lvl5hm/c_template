@@ -199,21 +199,22 @@ Texture_Atlas make_texture_atlas_from_folder(Platform platform, State *state,  S
 
 #define FONT_HEIGHT 32
 
-Bitmap get_codepoint_bitmap(stbtt_fontinfo font, char c) {
+typedef struct {
+  Bitmap bmp;
+  Codepoint_Metrics metrics;
+} Codepoint_Parse_Result;
+
+Codepoint_Parse_Result get_codepoint_bitmap(stbtt_fontinfo font, char c) {
   i32 width;
   i32 height;
-  f32 scale = stbtt_ScaleForPixelHeight(&font, 32);
+  f32 scale = stbtt_ScaleForPixelHeight(&font, FONT_HEIGHT);
   byte *single_bitmap = stbtt_GetCodepointBitmap(&font, 0, scale, c, &width, &height, 0, 0);
-  Bitmap bitmap = make_empty_bitmap(width, 32);
+  Bitmap bitmap = make_empty_bitmap(width, height);
   
   i32 x0, y0, x1, y1;
   stbtt_GetCodepointBitmapBox(&font, c, scale, scale, &x0,&y0,&x1,&y1);
   
-  if (c == '-') {
-    x0 = 32;
-  }
-  
-  u32 *row = (u32 *)bitmap.data + (FONT_HEIGHT-1 + y1)*width;
+  u32 *row = (u32 *)bitmap.data + (height-1)*width;
   for (i32 y = 0; y < height; y++) {
     u32 *dst = row;
     for (i32 x = 0; x < width; x++) {
@@ -228,7 +229,11 @@ Bitmap get_codepoint_bitmap(stbtt_fontinfo font, char c) {
     row -= width;
   }
   
-  return bitmap;
+  Codepoint_Parse_Result result;
+  result.metrics.origin = V2(0, (f32)y1/height);
+  result.bmp = bitmap;
+  
+  return result;
 }
 
 Font load_ttf(State *state, Platform platform, String file_name) {
@@ -242,11 +247,16 @@ Font load_ttf(State *state, Platform platform, String file_name) {
   u64 loaded_bitmaps_memory = arena_get_mark(&state->temp);
   push_arena_context(&state->temp);
   result.first_codepoint_index = '!';
+  i32 last_codepoint_index = '~';
+  result.codepoint_count = last_codepoint_index - result.first_codepoint_index;
+  result.metrics = 0;
+  
   
   Bitmap *bitmaps = 0;
-  for (char ch = result.first_codepoint_index; ch <= '~'; ch++) {
-    Bitmap bmp = get_codepoint_bitmap(font, ch);
-    sb_push(bitmaps, bmp);
+  for (char ch = result.first_codepoint_index; ch <= last_codepoint_index; ch++) {
+    Codepoint_Parse_Result codepoint = get_codepoint_bitmap(font, ch);
+    sb_push(bitmaps, codepoint.bmp);
+    sb_push(result.metrics, codepoint.metrics);
   }
   
   arena_set_mark(&state->temp, loaded_bitmaps_memory);
@@ -374,21 +384,7 @@ void draw_robot(State *state, Render_Group *group) {
                                                      state->robot_anim);
     Transform t = frame.t;
     t.scale = V3(0.2f, 0.2f, 1);
-    
-#if 0    
-    static i32 index = 0;
-    if ((index / 10) > 25) {
-      index = 0;
-    }
-    
-    Sprite letter;
-    letter.atlas = &state->font.atlas;
-    letter.index = index / 10;
-    letter.origin = V2(0.5f, 0.5f);
-#endif
     push_sprite(group, state->spr_robot_eye, t);
-    
-    //index++;
   }
   
   render_restore(group);
@@ -408,6 +404,9 @@ extern GAME_UPDATE(game_update) {
   State *state = (State *)memory.data;
   Arena *arena = &state->arena;
   
+  __global_context_stack = memory.context_stack;
+  __global_context_count = memory.context_count;
+  __global_context_capacity = memory.context_capacity;
   
   if (!state->is_initialized) {
     u64 permanent_size = megabytes(64);
@@ -432,7 +431,8 @@ extern GAME_UPDATE(game_update) {
     
     // NOTE(lvl5): font stuff
     
-    state->font = load_ttf(state, platform, const_string("Gugi-Regular.ttf"));
+    //state->font = load_ttf(state, platform, const_string("Gugi-Regular.ttf"));
+    state->font = load_ttf(state, platform, const_string("arial.ttf"));
     
     Buffer shader_src = platform.read_entire_file(const_string("basic.glsl"));
     gl_Parse_Result sources = gl_parse_glsl(buffer_to_string(shader_src));
@@ -452,319 +452,7 @@ extern GAME_UPDATE(game_update) {
     add_entity(state, Entity_Type_NONE); // filler entity
     add_entity(state, Entity_Type_PLAYER);
     
-    
-    {
-      Animation_Pack *pack = state->robot_parts + Robot_Part_RIGHT_LEG;
-      pack->animation_count = 2;
-      pack->animations = alloc_array(Animation, pack->animation_count, 4);
-      {
-        Animation a;
-        a.frames = 0;
-        sb_reserve(a.frames, 16, true);
-        
-        Animation_Frame frame0 = (Animation_Frame){
-          0,
-          (Transform){
-            V3(0, 0, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        Animation_Frame frame1 = (Animation_Frame){
-          0.33f,
-          (Transform){
-            V3(0.2f, 0, 0), // p
-            V3(1, 1, 1), // scale
-            PI*0.4, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        Animation_Frame frame2 = (Animation_Frame){
-          0.66f,
-          (Transform){
-            V3(0.26f, 0, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        
-        sb_push(a.frames, frame0);
-        sb_push(a.frames, frame1);
-        sb_push(a.frames, frame2);
-        
-        frame0.position = 1.0f;
-        sb_push(a.frames, frame0);
-        
-        a.frame_count = sb_count(a.frames);
-        a.speed = 0.7f;
-        pack->animations[Robot_Animation_WALK] = a;
-      }
-      
-      {
-        Animation a;
-        a.frames = 0;
-        sb_reserve(a.frames, 16, true);
-        
-        Animation_Frame frame0 = (Animation_Frame){
-          0,
-          (Transform){
-            V3(0, 0, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        
-        Animation_Frame frame1 = (Animation_Frame){
-          0.5f,
-          (Transform){
-            V3(0, -0.08f, 0), // p
-            V3(1, 1, 1), // scale
-            0.2f, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        sb_push(a.frames, frame0);
-        sb_push(a.frames, frame1);
-        
-        frame0.position = 1.0f;
-        sb_push(a.frames, frame0);
-        a.frame_count = sb_count(a.frames);
-        a.speed = 1;
-        
-        pack->animations[Robot_Animation_IDLE] = a;
-      }
-    }
-    
-    
-    {
-      Animation_Pack *pack = state->robot_parts + Robot_Part_BODY;
-      pack->animation_count = 2;
-      pack->animations = alloc_array(Animation, pack->animation_count, 4);
-      {
-        Animation a;
-        a.frames = 0;
-        sb_reserve(a.frames, 16, true);
-        
-        Animation_Frame frame0 = (Animation_Frame){
-          0,
-          (Transform){
-            V3(0.1f, 0, 0), // p
-            V3(1, 1, 1), // scale
-            0.2f, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        Animation_Frame frame1 = (Animation_Frame){
-          0.5f,
-          (Transform){
-            V3(0.1f, 0, 0), // p
-            V3(1, 1, 1), // scale
-            0.1f, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        sb_push(a.frames, frame0);
-        sb_push(a.frames, frame1);
-        
-        frame0.position = 1.0f;
-        sb_push(a.frames, frame0);
-        
-        a.frame_count = sb_count(a.frames);
-        a.speed = 0.7f;
-        pack->animations[Robot_Animation_WALK] = a;
-      }
-      
-      {
-        Animation a;
-        a.frames = 0;
-        sb_reserve(a.frames, 16, true);
-        
-        Animation_Frame frame0 = (Animation_Frame){
-          0,
-          (Transform){
-            V3(0, 0.05f, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        Animation_Frame frame1 = (Animation_Frame){
-          0.5f,
-          (Transform){
-            V3(0, -0.05f, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        
-        sb_push(a.frames, frame0);
-        sb_push(a.frames, frame1);
-        
-        frame0.position = 1.0f;
-        sb_push(a.frames, frame0);
-        a.frame_count = sb_count(a.frames);
-        a.speed = 1;
-        
-        pack->animations[Robot_Animation_IDLE] = a;
-      }
-    }
-    
-    
-    {
-      Animation_Pack *pack = state->robot_parts + Robot_Part_EYE;
-      pack->animation_count = 2;
-      pack->animations = alloc_array(Animation, pack->animation_count, 4);
-      {
-        Animation a;
-        a.frames = 0;
-        sb_reserve(a.frames, 16, true);
-        
-        Animation_Frame frame0 = (Animation_Frame){
-          0,
-          (Transform){
-            V3(0.07f, 0, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        Animation_Frame frame1 = (Animation_Frame){
-          0.5f,
-          (Transform){
-            V3(0.09f, 0, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        sb_push(a.frames, frame0);
-        sb_push(a.frames, frame1);
-        
-        frame0.position = 1.0f;
-        sb_push(a.frames, frame0);
-        
-        a.frame_count = sb_count(a.frames);
-        a.speed = 1.5f;
-        pack->animations[Robot_Animation_WALK] = a;
-      }
-      
-      {
-        Animation a;
-        a.frames = 0;
-        sb_reserve(a.frames, 16, true);
-        
-        Animation_Frame frame0 = (Animation_Frame){
-          0,
-          (Transform){
-            V3(0, 0, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        Animation_Frame frame1 = (Animation_Frame){
-          0.5f,
-          (Transform){
-            V3(0, 0, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        
-        Animation_Frame frame2 = (Animation_Frame){
-          0.55f,
-          (Transform){
-            V3(-0.1f, 0.07f, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        
-        Animation_Frame frame3 = (Animation_Frame){
-          0.7f,
-          (Transform){
-            V3(-0.1f, 0.07f, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        Animation_Frame frame4 = (Animation_Frame){
-          0.75f,
-          (Transform){
-            V3(-0.1f, 0.07f, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        
-        Animation_Frame frame5 = (Animation_Frame){
-          0.85f,
-          (Transform){
-            V3(0.07f, 0.03f, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        
-        Animation_Frame frame6 = (Animation_Frame){
-          0.95f,
-          (Transform){
-            V3(0.07f, 0.03f, 0), // p
-            V3(1, 1, 1), // scale
-            0, // angle
-          },
-          V4(1, 1, 1, 1),
-        };
-        
-        sb_push(a.frames, frame0);
-        sb_push(a.frames, frame1);
-        sb_push(a.frames, frame2);
-        sb_push(a.frames, frame3);
-        sb_push(a.frames, frame4);
-        sb_push(a.frames, frame5);
-        sb_push(a.frames, frame6);
-        
-        
-        frame0.position = 1.0f;
-        sb_push(a.frames, frame0);
-        a.frame_count = sb_count(a.frames);
-        a.speed = 0.1f;
-        
-        pack->animations[Robot_Animation_IDLE] = a;
-      }
-    }
-    
-    
-    Animation_Instance *inst = &state->robot_anim;
-    inst->weights = alloc_array(f32, Robot_Animation_COUNT, 4);
-    inst->positions = alloc_array(f32, Robot_Animation_COUNT, 4);
-    
+#include "robot_animation.h"
     state->is_initialized = true;
   }
   
@@ -842,6 +530,7 @@ extern GAME_UPDATE(game_update) {
         render_save(&group);
         //render_color(&group, V4(0, 1, 0, 1));
         render_transform(&group, entity->t);
+        render_color(&group, V4(0, 1, 1, 1));
         draw_robot(state, &group);
         render_restore(&group);
 #endif

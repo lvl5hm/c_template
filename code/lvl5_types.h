@@ -37,6 +37,7 @@ typedef u8 byte;
 
 #define offsetof(T, m) ((u64)(void *)&(((T *)0)->m))
 
+#define globalvar static
 
 #define LVL5_TYPES
 #endif
