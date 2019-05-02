@@ -17,7 +17,7 @@
 typedef DIRECT_SOUND_CREATE(Direct_Sound_Create);
 
 #define TARGET_FPS 60
-
+#define PERM_MEMORY_SIZE megabytes(32)
 
 u64 win32_get_last_write_time(String file_name) {
   WIN32_FIND_DATAA find_data;
@@ -124,15 +124,72 @@ typedef struct {
   LPDIRECTSOUNDBUFFER direct_buffer;
 } win32_Sound;
 
+
+typedef enum {
+  Replay_State_NONE,
+  Replay_State_WRITE,
+  Replay_State_PLAY,
+} Replay_State;
+
+typedef struct {
+  Replay_State state;
+  
+  byte *data;
+  game_Input inputs[TARGET_FPS*60];
+  i32 count;
+  i32 play_index;
+} win32_Replay;
+
+
 typedef struct {
   u64 performance_frequency;
   f32 dt;
   b32 running;
   win32_Sound sound;
   game_Sound_Buffer game_sound_buffer;
+  
+  win32_Replay replay;
 } win32_State;
 
 win32_State state;
+
+
+
+void win32_replay_begin_write(game_Memory memory) {
+  win32_Replay *r = &state.replay;
+  assert(r->state == Replay_State_NONE);
+  r->state = Replay_State_WRITE;
+  copy_memory_slow(r->data, memory.perm, memory.perm_size);
+  r->count = 0;
+}
+
+void win32_replay_begin_play(game_Memory memory) {
+  win32_Replay *r = &state.replay;
+  r->state = Replay_State_PLAY;
+  r->play_index = 0;
+  copy_memory_slow(memory.perm, r->data, memory.perm_size);
+}
+
+void win32_replay_save_input(game_Input input, game_Memory memory) {
+  win32_Replay *r = &state.replay;
+  assert(r->state == Replay_State_WRITE);
+  
+  r->inputs[r->count++] = input;
+  if (r->count == array_count(r->inputs)) {
+    win32_replay_begin_play(memory);
+  }
+}
+
+game_Input win32_replay_get_next_input(game_Memory memory) {
+  win32_Replay *r = &state.replay;
+  assert(r->state == Replay_State_PLAY);
+  assert(r->play_index < r->count);
+  game_Input result = r->inputs[r->play_index++];
+  if (r->play_index == r->count) {
+    win32_replay_begin_play(memory);
+  }
+  return result;
+}
 
 typedef struct {
   HANDLE handle;
@@ -661,14 +718,22 @@ int CALLBACK WinMain(HINSTANCE instance,
     state.sound = win32_sound;
   }
   
+  state.replay.data = alloc(PERM_MEMORY_SIZE, 8);
+  
+  u64 total_memory_size = gigabytes(1);
+  byte *total_memory = alloc(total_memory_size, 8);
+  
   game_Memory game_memory;
-  game_memory.size = gigabytes(1);
-  game_memory.data = alloc(game_memory.size, 8);
-  zero_memory_slow(game_memory.data, megabytes(8));
+  game_memory.perm = total_memory;
+  game_memory.perm_size = PERM_MEMORY_SIZE;
+  game_memory.temp = total_memory + game_memory.perm_size;
+  game_memory.temp_size = total_memory_size - game_memory.perm_size;
+  
   game_memory.context_stack = __global_context_stack;
   game_memory.context_count = __global_context_count;
   game_memory.context_capacity = __global_context_capacity;
   
+  zero_memory_slow(total_memory, game_memory.perm_size);
   
   game_Input game_input = {0};
   
@@ -778,8 +843,11 @@ int CALLBACK WinMain(HINSTANCE instance,
         {
 #define KEY_WAS_DOWN_BIT 1 << 30
 #define KEY_IS_UP_BIT 1 << 31
+          b32 key_was_down = (message.lParam & KEY_WAS_DOWN_BIT);
           b32 key_is_down = !(message.lParam & KEY_IS_UP_BIT);
+          b32 key_went_down = !key_was_down && key_is_down;
           WPARAM key_code = message.wParam;
+          
           
           switch (key_code)
           {
@@ -811,6 +879,14 @@ int CALLBACK WinMain(HINSTANCE instance,
             case VK_SPACE:
             win32_handle_button(&game_input.start, key_is_down);
             break;
+            case VK_F1:
+            if (key_went_down && state.replay.state == Replay_State_NONE)
+              win32_replay_begin_write(game_memory);
+            break;
+            case VK_F2:
+            if (key_went_down && state.replay.state == Replay_State_WRITE)
+              win32_replay_begin_play(game_memory);
+            break;
           }
         } break;
         
@@ -820,6 +896,12 @@ int CALLBACK WinMain(HINSTANCE instance,
           DispatchMessage(&message);
         }
       }
+    }
+    
+    if (state.replay.state == Replay_State_WRITE) {
+      win32_replay_save_input(game_input, game_memory);
+    } else if (state.replay.state == Replay_State_PLAY) {
+      game_input = win32_replay_get_next_input(game_memory);
     }
     
     

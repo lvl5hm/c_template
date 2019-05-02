@@ -398,10 +398,10 @@ Sprite make_sprite(Texture_Atlas *atlas, i32 index, v2 origin) {
   return result;
 }
 
-
+#define SCRATCH_SIZE kilobytes(32)
 
 extern GAME_UPDATE(game_update) {
-  State *state = (State *)memory.data;
+  State *state = (State *)memory.perm;
   Arena *arena = &state->arena;
   
   __global_context_stack = memory.context_stack;
@@ -409,13 +409,9 @@ extern GAME_UPDATE(game_update) {
   __global_context_capacity = memory.context_capacity;
   
   if (!state->is_initialized) {
-    u64 permanent_size = megabytes(64);
-    u64 scratch_size = kilobytes(32);
-    u64 temp_size = megabytes(256);
-    
-    arena_init(&state->arena, memory.data + sizeof(State), megabytes(64));
-    arena_init(&state->scratch, state->arena.data + state->arena.capacity, scratch_size);
-    arena_init(&state->temp, state->scratch.data + state->scratch.capacity, temp_size);
+    arena_init(&state->arena, memory.perm + sizeof(State), memory.perm_size - sizeof(State));
+    arena_init(&state->scratch, memory.temp, SCRATCH_SIZE);
+    arena_init(&state->temp, memory.temp + SCRATCH_SIZE, memory.temp_size - SCRATCH_SIZE);
   }
   
   gl_Funcs gl = platform.gl;

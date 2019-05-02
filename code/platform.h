@@ -48,8 +48,12 @@ typedef struct {
 
 typedef struct {
   b32 is_reloaded;
-  byte *data;
-  u64 size;
+  
+  byte *perm;
+  u64 perm_size;
+  
+  byte *temp;
+  u64 temp_size;
   
   Context *context_stack;
   u32 context_count;

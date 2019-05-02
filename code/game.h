@@ -78,7 +78,6 @@ typedef struct {
   Arena scratch;
   Arena temp;
   
-  
   Entity entities[40000];
   i32 entity_count;
   
