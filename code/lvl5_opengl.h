@@ -1,7 +1,6 @@
 #ifndef LVL5_OPENGL_H
 
 #include "lvl5_string.h"
-#include "lvl5_context.h"
 #define APIENTRY __stdcall
 #define WINGDIAPI __declspec(dllimport)
 
@@ -110,7 +109,7 @@ gl_Parse_Result gl_parse_glsl(String src)
   return result;
 }
 
-u32 gl_compile_shader(gl_Funcs gl, u32 type, String src)
+u32 gl_compile_shader(Arena *arena, gl_Funcs gl, u32 type, String src)
 {
   u32 id = gl.CreateShader(type);
   gl.ShaderSource(id, 1, &src.data, (i32 *)&src.count);
@@ -122,7 +121,7 @@ u32 gl_compile_shader(gl_Funcs gl, u32 type, String src)
   {
     i32 length;
     gl.GetShaderiv(id, GL_INFO_LOG_LENGTH, &length);
-    char *message = (char *)scratch_alloc(length, 4);
+    char *message = arena_push_array(arena, char, length);
     gl.GetShaderInfoLog(id, length, &length, message);
     assert(false);
   }
@@ -130,11 +129,11 @@ u32 gl_compile_shader(gl_Funcs gl, u32 type, String src)
   return id;
 }
 
-u32 gl_create_shader(gl_Funcs gl, String vertex_src, String fragment_src)
+u32 gl_create_shader(Arena *arena, gl_Funcs gl, String vertex_src, String fragment_src)
 {
   u32 program = gl.CreateProgram();
-  u32 vertex_shader = gl_compile_shader(gl, GL_VERTEX_SHADER, vertex_src);
-  u32 fragment_shader = gl_compile_shader(gl, GL_FRAGMENT_SHADER, fragment_src);
+  u32 vertex_shader = gl_compile_shader(arena, gl, GL_VERTEX_SHADER, vertex_src);
+  u32 fragment_shader = gl_compile_shader(arena, gl, GL_FRAGMENT_SHADER, fragment_src);
   
   gl.AttachShader(program, vertex_shader);
   gl.AttachShader(program, fragment_shader);

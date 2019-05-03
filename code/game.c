@@ -4,7 +4,6 @@
 #include "game.h"
 #include "lvl5_math.h"
 #include "lvl5_opengl.h"
-#include "lvl5_context.h"
 #include "lvl5_stretchy_buffer.h"
 #include "lvl5_random.h"
 #include "renderer.c"
@@ -210,28 +209,21 @@ void remove_entity(State *state, i32 index) {
 }
 
 
-void push_arena_context(Arena *arena) {
-  Context ctx = get_context();
-  ctx.allocator = arena_allocator;
-  ctx.allocator_data = arena;
-  push_context(ctx);
-}
-
-Bitmap make_empty_bitmap(i32 width, i32 height) {
+Bitmap make_empty_bitmap(Arena *arena, i32 width, i32 height) {
   Bitmap result;
   result.width = width;
   result.height = height;
-  result.data = (byte *)alloc_array(u32, width*height, 4);
+  result.data = (byte *)arena_push_array(arena, u32, width*height);
   zero_memory_slow(result.data, width*height*sizeof(u32));
   return result;
 }
 
 
 
-Texture_Atlas make_texture_atlas_from_bitmaps(Bitmap *bitmaps, i32 count) {
+Texture_Atlas make_texture_atlas_from_bitmaps(Arena *arena, Bitmap *bitmaps, i32 count) {
   Texture_Atlas result = {0};
   result.sprite_count = count;
-  result.rects = alloc_array(rect2, count, 4);
+  result.rects = arena_push_array(arena, rect2, count);
   
   i32 max_width = 0;
   i32 total_height = 0;
@@ -244,7 +236,7 @@ Texture_Atlas make_texture_atlas_from_bitmaps(Bitmap *bitmaps, i32 count) {
     total_height += bmp->height;
   }
   
-  result.bmp = make_empty_bitmap(max_width, total_height);
+  result.bmp = make_empty_bitmap(arena, max_width, total_height);
   i32 current_y = 0;
   
   for (i32 bitmap_index = 0; bitmap_index < count; bitmap_index++) {
@@ -273,18 +265,16 @@ Texture_Atlas make_texture_atlas_from_folder(Platform platform, State *state,  S
   File_List dir = platform.get_files_in_folder(folder);
   u64 loaded_bitmaps_memory = arena_get_mark(&state->temp);
   
-  push_arena_context(&state->temp);
-  Bitmap *bitmaps = alloc_array(Bitmap, dir.count, 4);
+  Bitmap *bitmaps = arena_push_array(&state->temp, Bitmap, dir.count);
   
   for (i32 file_index = 0; file_index < dir.count; file_index++) {
     String file_name = dir.files[file_index];
-    String full_name = scratch_concat(folder, scratch_concat(const_string("\\"), file_name));
+    String full_name = concat(&state->temp, folder, concat(&state->temp, const_string("\\"), file_name));
     Bitmap sprite_bmp = load_bmp(platform, full_name);
     bitmaps[file_index] = sprite_bmp;
   }
-  pop_context();
   
-  Texture_Atlas result = make_texture_atlas_from_bitmaps(bitmaps, dir.count); 
+  Texture_Atlas result = make_texture_atlas_from_bitmaps(&state->arena, bitmaps, dir.count); 
   arena_set_mark(&state->temp, loaded_bitmaps_memory);
   
   return result;
@@ -297,12 +287,12 @@ typedef struct {
   Codepoint_Metrics metrics;
 } Codepoint_Parse_Result;
 
-Codepoint_Parse_Result get_codepoint_bitmap(stbtt_fontinfo font, char c) {
+Codepoint_Parse_Result get_codepoint_bitmap(Arena *arena, stbtt_fontinfo font, char c) {
   i32 width;
   i32 height;
   f32 scale = stbtt_ScaleForPixelHeight(&font, FONT_HEIGHT);
   byte *single_bitmap = stbtt_GetCodepointBitmap(&font, 0, scale, c, &width, &height, 0, 0);
-  Bitmap bitmap = make_empty_bitmap(width, height);
+  Bitmap bitmap = make_empty_bitmap(arena, width, height);
   
   i32 x0, y0, x1, y1;
   stbtt_GetCodepointBitmapBox(&font, c, scale, scale, &x0,&y0,&x1,&y1);
@@ -338,24 +328,23 @@ Font load_ttf(State *state, Platform platform, String file_name) {
   stbtt_InitFont(&font, font_buffer, stbtt_GetFontOffsetForIndex(font_buffer, 0));
   
   u64 loaded_bitmaps_memory = arena_get_mark(&state->temp);
-  push_arena_context(&state->temp);
   result.first_codepoint_index = '!';
   i32 last_codepoint_index = '~';
   result.codepoint_count = last_codepoint_index - result.first_codepoint_index;
-  result.metrics = 0;
+  result.metrics = sb_init(&state->arena, Codepoint_Metrics,
+                           result.codepoint_count, false);
   
   
-  Bitmap *bitmaps = 0;
-  for (char ch = result.first_codepoint_index; ch <= last_codepoint_index; ch++) {
-    Codepoint_Parse_Result codepoint = get_codepoint_bitmap(font, ch);
+  Bitmap *bitmaps = sb_init(&state->temp, Bitmap, result.codepoint_count, false);
+  for (char ch = result.first_codepoint_index; ch < last_codepoint_index; ch++) {
+    Codepoint_Parse_Result codepoint = get_codepoint_bitmap(&state->temp, font, ch);
     sb_push(bitmaps, codepoint.bmp);
     sb_push(result.metrics, codepoint.metrics);
   }
   
   arena_set_mark(&state->temp, loaded_bitmaps_memory);
-  pop_context();
   
-  Texture_Atlas atlas = make_texture_atlas_from_bitmaps(bitmaps, sb_count(bitmaps));
+  Texture_Atlas atlas = make_texture_atlas_from_bitmaps(&state->arena, bitmaps, sb_count(bitmaps));
   result.atlas = atlas;
   
   return result;
@@ -440,7 +429,7 @@ void draw_robot(State *state, Render_Group *group) {
   {
     Animation_Instance inst = state->robot_anim;
     f32 *old_pos = inst.positions;
-    inst.positions = scratch_alloc_array(f32, 2, 4);
+    inst.positions = arena_push_array(&state->scratch, f32, 2);
     copy_memory_slow(inst.positions, old_pos, sizeof(f32)*2);
     inst.positions[Robot_Animation_WALK] += 0.5f;
     
@@ -497,8 +486,6 @@ extern GAME_UPDATE(game_update) {
   State *state = (State *)memory.perm;
   Arena *arena = &state->arena;
   
-  __global_context_threads = memory.context_stack;
-  
   gl = platform.gl;
   
   if (!state->is_initialized) {
@@ -506,12 +493,6 @@ extern GAME_UPDATE(game_update) {
     arena_init(&state->scratch, memory.temp, SCRATCH_SIZE);
     arena_init(&state->temp, memory.temp + SCRATCH_SIZE, memory.temp_size - SCRATCH_SIZE);
   }
-  
-  Context context = {0};
-  context.scratch_memory = &state->scratch;
-  context.allocator_data = &state->arena;
-  context.allocator = arena_allocator;
-  push_context(context);
   
   if (!state->is_initialized) {
     state->rand = make_random_sequence(2312323342);
@@ -524,14 +505,14 @@ extern GAME_UPDATE(game_update) {
     Buffer shader_src = platform.read_entire_file(const_string("basic.glsl"));
     gl_Parse_Result sources = gl_parse_glsl(buffer_to_string(shader_src));
     
-    state->shader_basic = gl_create_shader(gl, sources.vertex, sources.fragment);
+    state->shader_basic = gl_create_shader(&state->arena, gl, sources.vertex, sources.fragment);
     
     state->atlas = make_texture_atlas_from_folder(platform, state, const_string("sprites"));
     
     Bitmap *bmp = &state->debug_atlas.bmp;
-    *bmp = make_empty_bitmap(1, 1);
+    *bmp = make_empty_bitmap(&state->arena, 1, 1);
     ((u32 *)bmp->data)[0] = 0xFFFFFFFF;
-    state->debug_atlas.rects = alloc_array(rect2, 1, 4);
+    state->debug_atlas.rects = arena_push_array(&state->arena, rect2, 1);
     state->debug_atlas.rects[0] = rect2_min_max(V2(0, 0), V2(1, 1));
     state->debug_atlas.sprite_count = 1;
     
@@ -558,9 +539,7 @@ extern GAME_UPDATE(game_update) {
   
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group group;
-  push_arena_context(&state->temp); {
-    render_group_init(state, &group, 100000, v2i_to_v2(screen_size));
-  } pop_context();
+  render_group_init(&state->temp, state, &group, 100000, v2i_to_v2(screen_size));
   
 #if 0  
   v2 screen_size_v2 = v2i_to_v2(screen_size);
@@ -577,7 +556,6 @@ extern GAME_UPDATE(game_update) {
 #define PLAYER_SPEED 0.03f
         
         entity->t.scale = V3(1, 1, 1);
-        i32_to_string(-5343);
         //String text = scratch_sprintf(const_string("robot is at (%i, %i)"), (i32)entity->t.p.x, (i32)entity->t.p.y);
         String text = const_string("         -53");
         push_text(&group, state->font, text, entity->t);
@@ -645,14 +623,9 @@ extern GAME_UPDATE(game_update) {
   
   gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   gl.Clear(GL_COLOR_BUFFER_BIT);
-  push_arena_context(&state->temp); {
-    render_group_output(state, &group, &state->renderer);
-  } pop_context();
-  
+  render_group_output(state, &group, &state->renderer);
   
   
   arena_set_mark(&state->temp, render_memory);
-  
-  scratch_clear();
-  pop_context();
+  arena_set_mark(&state->scratch, 0);
 }

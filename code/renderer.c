@@ -228,8 +228,8 @@ void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp, mat4x4 model_mat, 
 
 
 
-void render_group_init(State *state, Render_Group *group, i32 item_capacity, v2 screen_size) {
-  group->items = alloc_array(Render_Item, item_capacity, 4);
+void render_group_init(Arena *arena, State *state, Render_Group *group, i32 item_capacity, v2 screen_size) {
+  group->items = arena_push_array(arena, Render_Item, item_capacity);
   group->item_count = 0;
   group->screen_size = screen_size;
   group->state.matrix = mat4x4_identity();
@@ -243,8 +243,7 @@ void render_group_output(State *state, Render_Group *group, Quad_Renderer *rende
   assert(group->state_stack_count == 0);
   
   if (group->item_count != 0) {
-    Quad_Instance *instances = 0;
-    sb_reserve(instances, group->item_count, false);
+    Quad_Instance *instances = sb_init(&state->temp, Quad_Instance, group->item_count, false);
     
     Texture_Atlas *atlas = 0;
     

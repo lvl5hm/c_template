@@ -2,11 +2,11 @@
 {
   Animation_Pack *pack = state->robot_parts + Robot_Part_RIGHT_LEG;
   pack->animation_count = 2;
-  pack->animations = alloc_array(Animation, pack->animation_count, 4);
+  pack->animations = arena_push_array(&state->arena, Animation, 
+                                      pack->animation_count);
   {
     Animation a;
-    a.frames = 0;
-    sb_reserve(a.frames, 16, true);
+    a.frames = sb_init(&state->arena, Animation_Frame, 16, true);
     
     Animation_Frame frame0 = (Animation_Frame){
       0,
@@ -53,8 +53,7 @@
   
   {
     Animation a;
-    a.frames = 0;
-    sb_reserve(a.frames, 16, true);
+    a.frames = sb_init(&state->arena, Animation_Frame, 16, true);
     
     Animation_Frame frame0 = (Animation_Frame){
       0,
@@ -93,11 +92,11 @@
 {
   Animation_Pack *pack = state->robot_parts + Robot_Part_BODY;
   pack->animation_count = 2;
-  pack->animations = alloc_array(Animation, pack->animation_count, 4);
+  pack->animations = arena_push_array(&state->arena, Animation, 
+                                      pack->animation_count);
   {
     Animation a;
-    a.frames = 0;
-    sb_reserve(a.frames, 16, true);
+    a.frames = sb_init(&state->arena, Animation_Frame, 16, true);
     
     Animation_Frame frame0 = (Animation_Frame){
       0,
@@ -132,8 +131,7 @@
   
   {
     Animation a;
-    a.frames = 0;
-    sb_reserve(a.frames, 16, true);
+    a.frames = sb_init(&state->arena, Animation_Frame, 16, true);
     
     Animation_Frame frame0 = (Animation_Frame){
       0,
@@ -172,11 +170,11 @@
 {
   Animation_Pack *pack = state->robot_parts + Robot_Part_EYE;
   pack->animation_count = 2;
-  pack->animations = alloc_array(Animation, pack->animation_count, 4);
+  pack->animations = arena_push_array(&state->arena, Animation, 
+                                      pack->animation_count);
   {
     Animation a;
-    a.frames = 0;
-    sb_reserve(a.frames, 16, true);
+    a.frames = sb_init(&state->arena, Animation_Frame, 16, true);
     
     Animation_Frame frame0 = (Animation_Frame){
       0,
@@ -211,8 +209,7 @@
   
   {
     Animation a;
-    a.frames = 0;
-    sb_reserve(a.frames, 16, true);
+    a.frames = sb_init(&state->arena, Animation_Frame, 16, true);
     
     Animation_Frame frame0 = (Animation_Frame){
       0,
@@ -308,5 +305,5 @@
 
 
 Animation_Instance *inst = &state->robot_anim;
-inst->weights = alloc_array(f32, Robot_Animation_COUNT, 4);
-inst->positions = alloc_array(f32, Robot_Animation_COUNT, 4);
+inst->weights = arena_push_array(&state->arena, f32, Robot_Animation_COUNT);
+inst->positions = arena_push_array(&state->arena, f32, Robot_Animation_COUNT);

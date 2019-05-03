@@ -14,20 +14,32 @@ typedef struct {
 } Arena;
 
 
+void copy_memory_slow(void *dst, void *src, u64 size) {
+  for (u64 i = 0; i < size; i++) {
+    ((byte *)dst)[i] = ((byte *)src)[i];
+  }
+}
+
+void zero_memory_slow(void *dst, u64 size) {
+  for (u64 i = 0; i < size; i++) {
+    ((byte *)dst)[i] = 0;
+  }
+}
+
 void arena_init(Arena *arena, void *data, u64 capacity) {
   arena->data = (byte *)data;
   arena->capacity = capacity;
   arena->size = 0;
 }
 
-#define arena_push_array(arena, T, count, align) \
-(T *)_arena_push_memory(arena, sizeof(T)*count, align)
+#define arena_push_array(arena, T, count) \
+(T *)_arena_push_memory(arena, sizeof(T)*count, 4)
 
-#define arena_push_struct(arena, T, align) \
-(T *)_arena_push_memory(arena, sizeof(T), align)
+#define arena_push_struct(arena, T) \
+(T *)_arena_push_memory(arena, sizeof(T), 4)
 
-#define arena_push_size(arena, size, align) \
-_arena_push_memory(arena, size, align)
+#define arena_push_size(arena, size) \
+_arena_push_memory(arena, size, 4)
 
 byte *_arena_push_memory(Arena *arena, u64 size, u64 align) {
   byte *result = 0;
@@ -67,8 +79,8 @@ void arena_check_no_marks(Arena *arena) {
 }
 
 void arena_init_subarena(Arena *parent, Arena *child,
-                         u64 capacity, u64 align) {
-  byte *child_memory = arena_push_array(parent, byte, capacity, align);
+                         u64 capacity) {
+  byte *child_memory = arena_push_array(parent, byte, capacity);
   arena_init(child, child_memory, capacity);
 }
 

@@ -2,7 +2,7 @@
 #define LVL5_STRING_VERSION 0
 
 #include "lvl5_types.h"
-#include "lvl5_context.h"
+#include "lvl5_alloc.h"
 #include "stdarg.h"
 
 typedef struct {
@@ -62,17 +62,17 @@ String substring(String s, u32 begin, u32 end) {
   return result;
 }
 
-String scratch_concat(String a, String b) {
+String concat(Arena *arena, String a, String b) {
   String result;
-  result.data = (char *)scratch_alloc(a.count + b.count, 4);
+  result.data = arena_push_array(arena, char, a.count + b.count);
   result.count = a.count + b.count;
   copy_memory_slow(result.data, a.data, a.count);
   copy_memory_slow(result.data + a.count, b.data, b.count);
   return result;
 }
 
-char *scratch_c_string(String a) {
-  char *result = (char *)scratch_alloc(a.count + 1, 4);
+char *to_c_string(Arena *arena, String a) {
+  char *result = arena_push_array(arena, char, a.count + 1);
   copy_memory_slow(result, a.data, a.count);
   result[a.count] = '\0';
   return result;
@@ -95,9 +95,9 @@ b32 c_string_compare(char *a, char *b) {
   return false;
 }
 
-String i32_to_string(i32 num)
+String i32_to_string(Arena *arena, i32 num)
 {
-  char *str = scratch_alloc_array(char, 11, 4);
+  char *str = arena_push_array(arena, char, 11);
   String result = {0};
   
   i32 n = num;
@@ -127,7 +127,7 @@ String i32_to_string(i32 num)
 }
 
 
-String scratch_sprintf(String fmt, ...) {
+String arena_sprintf(Arena *arena, String fmt, ...) {
   String result = {0};
   
   va_list args;
@@ -138,13 +138,13 @@ String scratch_sprintf(String fmt, ...) {
     if (fmt.data[i] == '%') {
       if (fmt.data[i+1] == 'i') {
         i32 num = va_arg(args, i32);
-        String str = i32_to_string(num);
+        String str = i32_to_string(arena, num);
         
-        result = scratch_concat(result, str);
+        result = concat(arena, result, str);
         i += 1;
       }
     } else {
-      result = scratch_concat(result, make_string(&fmt.data[i], 1));
+      result = concat(arena, result, make_string(&fmt.data[i], 1));
     }
   }
   
