@@ -4,6 +4,17 @@
 #include "lvl5_types.h"
 #include "lvl5_alloc.h"
 
+
+u32 get_thread_id() {
+  byte *thread_local_storage = (byte *)__readgsqword(0x30);
+  u32 result = *(u32 *)(thread_local_storage + 0x48);
+  
+  
+  
+  result = 0;
+  return result;
+}
+
 typedef enum {
   Allocator_Mode_ALLOC,
   Allocator_Mode_FREE,
@@ -25,9 +36,22 @@ typedef struct {
 
 
 // TODO(lvl5): make this multithreaded
-globalvar Context *__global_context_stack;
-globalvar u32 __global_context_count;
-globalvar u32 __global_context_capacity;
+typedef struct {
+  Context *items;
+  u32 count;
+  u32 capacity;
+} Context_Stack;
+
+globalvar Context_Stack *__global_context_threads;
+
+
+void init_context_stack_thread(void *memory, u32 capacity, u32 count) {
+  u32 thread_id = get_thread_id();
+  Context_Stack *stack = __global_context_threads + thread_id;
+  stack->capacity = capacity;
+  stack->items = (Context *)memory;
+  stack->count = count;
+}
 
 
 void copy_memory_slow(void *dst, void *src, u64 size) {
@@ -95,24 +119,21 @@ ALLOCATOR(dynamic_allocator) {
   return result;
 }
 
-void init_context_stack(void *memory, u32 capacity) {
-  __global_context_capacity = capacity;
-  __global_context_stack = (Context *)memory;
-  __global_context_count = 0;
-}
-
 Context get_context() {
-  Context result = __global_context_stack[__global_context_count-1];
+  Context_Stack *stack = __global_context_threads + get_thread_id();
+  Context result = stack->items[stack->count-1];
   return result;
 }
 
 void push_context(Context ctx) {
-  assert(__global_context_count < __global_context_capacity);
-  __global_context_stack[__global_context_count++] = ctx;
+  Context_Stack *stack = __global_context_threads + get_thread_id();
+  assert(stack->count < stack->capacity);
+  stack->items[stack->count++] = ctx;
 }
 
 void pop_context() {
-  __global_context_count--;
+  Context_Stack *stack = __global_context_threads + get_thread_id();
+  stack->count--;
 }
 
 Arena make_scratch_memory(void *data, u64 capacity) {

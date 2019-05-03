@@ -585,10 +585,95 @@ File_List win32_get_files_in_folder(String str) {
 }
 
 
+
+
+typedef struct {
+  volatile i32 write_cursor;
+  volatile i32 read_cursor;
+  Work_Queue_Entry entries[32];
+  HANDLE semaphore;
+} win32_Work_Queue;
+
+
+typedef struct {
+  win32_Work_Queue *queue;
+  i32 thread_index;
+} win32_Thread_Info;
+
+PLATFORM_ADD_WORK_QUEUE_ENTRY(win32_add_queue_entry) {
+  win32_Work_Queue *queue = (win32_Work_Queue *)queue_ptr;
+  
+  Work_Queue_Entry *entry = queue->entries + queue->write_cursor;
+  entry->fn = fn;
+  entry->data = data;
+  
+  complete_past_writes_before_future_writes();
+  i32 new_write_cursor = (queue->write_cursor + 1) % array_count(queue->entries);
+  assert(new_write_cursor != queue->read_cursor);
+  queue->write_cursor = new_write_cursor;
+  ReleaseSemaphore(queue->semaphore, 1, 0);
+}
+
+b32 win32_do_next_queue_entry(win32_Work_Queue *queue) {
+  b32 result = true;
+  
+  i32 original_read_cursor = queue->read_cursor;
+  i32 new_read_cursor = (original_read_cursor + 1) % 
+    array_count(queue->entries);
+  
+  if (original_read_cursor != queue->write_cursor) {
+    i32 index = InterlockedCompareExchange((volatile LONG *)&queue->read_cursor,
+                                           new_read_cursor,
+                                           original_read_cursor);
+    if (index == original_read_cursor) {
+      Work_Queue_Entry *entry = queue->entries + index;
+      entry->fn(entry->data);
+    }
+  } else {
+    result = false;
+  }
+  
+  return result;
+}
+
+DWORD WINAPI ThreadProc(void *data) {
+  win32_Thread_Info *info = (win32_Thread_Info *)data;
+  win32_Work_Queue *queue = info->queue;
+  
+  while (true) {
+    char buffer[128];
+    sprintf_s(buffer, array_count(buffer), "thread %d: ", info->thread_index);
+    OutputDebugStringA(buffer);
+    b32 should_try_again = win32_do_next_queue_entry(queue);
+    if (!should_try_again) {
+      WaitForSingleObjectEx(queue->semaphore, INFINITE, false);
+    }
+  }
+  
+  return 0;
+}
+
+
+#define THREAD_COUNT 8
+
 int CALLBACK WinMain(HINSTANCE instance,
                      HINSTANCE prevInstance,
                      LPSTR commandLine,
                      int showCommandLine) {
+  
+  win32_Work_Queue high_queue = {0};
+  high_queue.semaphore = CreateSemaphoreA(null, 0, array_count(high_queue.entries), null);
+  win32_Thread_Info thread_infos[THREAD_COUNT];
+  
+  for (i32 thread_index = 0; thread_index < THREAD_COUNT; thread_index++) {
+    win32_Thread_Info *info = thread_infos + thread_index;
+    info->queue = &high_queue;
+    info->thread_index = thread_index;
+    CreateThread(null, 0, ThreadProc, info, 0, null);
+  }
+  
+  
+  
   
   LARGE_INTEGER performance_frequency_li;
   QueryPerformanceFrequency(&performance_frequency_li);
@@ -599,8 +684,8 @@ int CALLBACK WinMain(HINSTANCE instance,
   
   printf("Hello, world! %zd\n", sizeof(i64));
   
-  
-  init_context_stack(malloc(sizeof(Context)*64), 64);
+  __global_context_threads = (Context_Stack *)malloc(sizeof(Context_Stack)*8);
+  init_context_stack_thread(malloc(sizeof(Context)*64), 64, 0);
   
   Context heap_ctx;
   heap_ctx.allocator = heap_allocator;
@@ -725,9 +810,8 @@ int CALLBACK WinMain(HINSTANCE instance,
   game_memory.temp = total_memory + game_memory.perm_size;
   game_memory.temp_size = total_memory_size - game_memory.perm_size;
   
-  game_memory.context_stack = __global_context_stack;
-  game_memory.context_count = __global_context_count;
-  game_memory.context_capacity = __global_context_capacity;
+  
+  game_memory.context_stack = __global_context_threads;
   
   zero_memory_slow(total_memory, game_memory.perm_size);
   
@@ -748,7 +832,8 @@ int CALLBACK WinMain(HINSTANCE instance,
   platform.file_has_no_errors = win32_file_has_no_errors;
   platform.read_file = win32_read_file;
   platform.close_file = win32_close_file;
-  
+  platform.add_work_queue_entry = win32_add_queue_entry;
+  platform.high_queue = (Work_Queue)&high_queue;
   
   HMODULE game_lib = 0;
   Game_Update *game_update = 0;
@@ -922,7 +1007,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     char buffer[256];
     sprintf_s(buffer, 256, "%.4f ms  %d samples\n", time_used*1000.0f, state.game_sound_buffer.count);
-    OutputDebugStringA(buffer);
+    //OutputDebugStringA(buffer);
     
     scratch_clear();
     SwapBuffers(device_context);

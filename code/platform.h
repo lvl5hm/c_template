@@ -5,6 +5,8 @@
 
 #define SAMPLES_PER_SECOND 48000
 
+#define complete_past_writes_before_future_writes() _WriteBarrier()
+#define complete_past_reads_before_future_reads() _ReadBarrier()
 
 
 typedef struct {
@@ -55,9 +57,7 @@ typedef struct {
   byte *temp;
   u64 temp_size;
   
-  Context *context_stack;
-  u32 context_count;
-  u32 context_capacity;
+  Context_Stack *context_stack;
 } game_Memory;
 
 typedef struct {
@@ -105,6 +105,19 @@ typedef PLATFORM_CLOSE_FILE(Platform_Close_File);
 
 #define GAME_UPDATE(name) void name(v2i screen_size, game_Memory memory, game_Input input, f32 dt, Platform platform)
 
+#define WORKER_FN(name) void name(void *data)
+typedef WORKER_FN(Worker_Fn);
+
+typedef struct {
+  Worker_Fn *fn;
+  void *data;
+} Work_Queue_Entry;
+
+
+typedef struct _Work_Queue *Work_Queue;
+
+#define PLATFORM_ADD_WORK_QUEUE_ENTRY(name) void name(Work_Queue queue_ptr, Worker_Fn *fn, void *data)
+typedef PLATFORM_ADD_WORK_QUEUE_ENTRY(Platform_Add_Work_Queue_Entry);
 
 typedef struct {
   Platform_Read_Entire_File *read_entire_file;
@@ -116,6 +129,9 @@ typedef struct {
   Platform_File_Has_No_Errors *file_has_no_errors;
   Platform_Read_File *read_file;
   Platform_Close_File *close_file;
+  Platform_Add_Work_Queue_Entry *add_work_queue_entry;
+  Work_Queue high_queue;
+  Work_Queue low_queue;
 } Platform;
 
 

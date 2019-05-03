@@ -497,9 +497,8 @@ extern GAME_UPDATE(game_update) {
   State *state = (State *)memory.perm;
   Arena *arena = &state->arena;
   
-  __global_context_stack = memory.context_stack;
-  __global_context_count = memory.context_count;
-  __global_context_capacity = memory.context_capacity;
+  __global_context_threads = memory.context_stack;
+  
   gl = platform.gl;
   
   if (!state->is_initialized) {
@@ -532,7 +531,7 @@ extern GAME_UPDATE(game_update) {
     Bitmap *bmp = &state->debug_atlas.bmp;
     *bmp = make_empty_bitmap(1, 1);
     ((u32 *)bmp->data)[0] = 0xFFFFFFFF;
-    state->debug_atlas.rects = alloc_array(rect2, 1, 0);
+    state->debug_atlas.rects = alloc_array(rect2, 1, 4);
     state->debug_atlas.rects[0] = rect2_min_max(V2(0, 0), V2(1, 1));
     state->debug_atlas.sprite_count = 1;
     
