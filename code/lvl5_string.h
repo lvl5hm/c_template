@@ -19,6 +19,14 @@ String make_string(char *data, u32 count) {
   return result;
 }
 
+String alloc_string(Arena *arena, char *data, u32 count) {
+  String result;
+  result.data = arena_push_array(arena, char, count);
+  copy_memory_slow(result.data, data, count);
+  result.count = count;
+  return result;
+}
+
 i32 find_last_index(String str, String substr) {
   for (u32 i = str.count - substr.count - 1; i >= 0; i--)
   {
@@ -95,15 +103,15 @@ b32 c_string_compare(char *a, char *b) {
   return false;
 }
 
-String i32_to_string(Arena *arena, i32 num)
-{
-  char *str = arena_push_array(arena, char, 11);
+String i32_to_string(Arena *arena, i32 num) {
+  u64 LENGTH = 10;
+  char *str = arena_push_array(arena, char, LENGTH + 1);
   String result = {0};
   
   i32 n = num;
   
   if (n == 0) {
-    str[10 - result.count] = '0';
+    str[LENGTH - result.count] = '0';
     result.count = 1;
   } else {
     if (n < 0) {
@@ -111,18 +119,50 @@ String i32_to_string(Arena *arena, i32 num)
     }
     
     while (n != 0) {
-      str[10 - result.count] = '0' + (n % 10);
+      str[LENGTH - result.count] = '0' + (n % 10);
       n /= 10;
       result.count++;
     }
     
     if (num < 0) {
-      str[10 - result.count] = '-';
+      str[LENGTH - result.count] = '-';
       result.count++;
     }
   }
   
-  result.data = str + 11 - result.count;
+  result.data = str + LENGTH+1 - result.count;
+  return result;
+}
+
+
+String i64_to_string(Arena *arena, i64 num) {
+  u64 LENGTH = 20;
+  char *str = arena_push_array(arena, char, LENGTH + 1);
+  String result = {0};
+  
+  i64 n = num;
+  
+  if (n == 0) {
+    str[LENGTH - result.count] = '0';
+    result.count = 1;
+  } else {
+    if (n < 0) {
+      n *= -1;
+    }
+    
+    while (n != 0) {
+      str[LENGTH - result.count] = '0' + (n % 10);
+      n /= 10;
+      result.count++;
+    }
+    
+    if (num < 0) {
+      str[LENGTH - result.count] = '-';
+      result.count++;
+    }
+  }
+  
+  result.data = str + LENGTH+1 - result.count;
   return result;
 }
 
@@ -137,9 +177,13 @@ String arena_sprintf(Arena *arena, String fmt, ...) {
   for (u32 i = 0; i < fmt.count; i++) {
     if (fmt.data[i] == '%') {
       if (fmt.data[i+1] == 'i') {
-        i32 num = va_arg(args, i32);
-        String str = i32_to_string(arena, num);
+        i64 num = va_arg(args, i64);
+        String str = i64_to_string(arena, num);
         
+        result = concat(arena, result, str);
+        i += 1;
+      } else if (fmt.data[i+1] == 's') {
+        String str = va_arg(args, String);
         result = concat(arena, result, str);
         i += 1;
       }

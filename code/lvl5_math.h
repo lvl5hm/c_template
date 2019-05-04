@@ -123,12 +123,29 @@ v2 v2_i(i32 x, i32 y) {
   return result;
 }
 
+v2 v2_perp(v2 a) {
+  v2 result = V2(-a.y, a.x);
+  return result;
+}
+
 v2 v2_zero() {return V2(0, 0);}
 v2 v2_right() {return V2(1, 0);}
 v2 v2_left() {return V2(-1, 0);}
 v2 v2_up() {return V2(0, 1);}
 v2 v2_down() {return V2(0, -1);}
 
+
+typedef struct {
+  f32 min;
+  f32 max;
+} Range;
+
+Range inverted_infinity_range() {
+  Range result;
+  result.min = INFINITY;
+  result.max = -INFINITY;
+  return result;
+}
 
 // v3
 
@@ -307,6 +324,13 @@ v4 v4_div_s(v4 a, f32 s) {
   return result;
 }
 
+v4 v2_to_v4(v2 v, f32 z, f32 w) {
+  v4 result;
+  result.xy = v;
+  result.z = z;
+  result.w = w;
+  return result;
+}
 
 // rotors
 typedef struct {
@@ -495,6 +519,25 @@ mat4x4 Mat4x4(f32 e00, f32 e10, f32 e20, f32 e30,
   
   return result;
 }
+
+mat2x2 mat4x4_to_mat2x2(mat4x4 m) {
+  mat2x2 result;
+  result.e00 = m.e00;
+  result.e01 = m.e01;
+  result.e10 = m.e10;
+  result.e11 = m.e11;
+  return result;
+}
+
+v4 mat4x4_mul_v4(mat4x4 m, v4 v) {
+  v4 result;
+  result.x = v.x*m.e00 + v.y*m.e10 + v.z*m.e20 + v.w*m.e30;
+  result.y = v.x*m.e01 + v.y*m.e11 + v.z*m.e21 + v.w*m.e31;
+  result.z = v.x*m.e02 + v.y*m.e12 + v.z*m.e22 + v.w*m.e32;
+  result.w = v.x*m.e03 + v.y*m.e13 + v.z*m.e23 + v.w*m.e33;
+  return result;
+}
+
 
 // TODO(lvl5): simd this shit?
 mat4x4 mat4x4_mul_mat4x4(mat4x4 a, mat4x4 b) {

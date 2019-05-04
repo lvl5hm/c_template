@@ -63,6 +63,8 @@ typedef struct {
 
 typedef struct {
   v2 origin;
+  f32 advance;
+  f32 *kerning;
 } Codepoint_Metrics;
 
 typedef struct {
@@ -99,6 +101,8 @@ typedef struct {
   Animation_Instance robot_anim;
   
   Rand rand;
+  
+  u32 frame_count;
 } State;
 
 

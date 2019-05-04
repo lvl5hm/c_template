@@ -1,5 +1,5 @@
-
 #include "renderer.h"
+#include "debug.h"
 #define PIXELS_PER_METER 96
 
 
@@ -68,6 +68,10 @@ Render_Item *push_render_item_(Render_Group *group, Render_Type type) {
 }
 
 void push_sprite(Render_Group *group, Sprite sprite, Transform t) {
+  if (group->item_count == 20) {
+    assert(sprite.atlas->rects);
+  }
+  
   render_save(group);
   render_transform(group, t);
   render_translate(group, v2_to_v3(v2_mul_s(sprite.origin, -1), 0));
@@ -94,9 +98,10 @@ void push_rect(Render_Group *group, rect2 rect, v4 color) {
   render_restore(group);
 }
 
-void push_text(Render_Group *group, Font font, String text, Transform t) {
+void push_text(Render_Group *group, Font *font, String text, Transform t) {
   render_save(group);
   render_transform(group, t);
+  render_scale(group, v3_invert(V3(PIXELS_PER_METER, PIXELS_PER_METER, 1)));
   
   for (u32 char_index = 0; char_index < text.count; char_index++) {
     char ch = text.data[char_index];
@@ -105,30 +110,28 @@ void push_text(Render_Group *group, Font font, String text, Transform t) {
       continue;
     }
     
-    assert(ch >= font.first_codepoint_index && 
-           ch < font.first_codepoint_index + font.codepoint_count);
+    assert(ch >= font->first_codepoint_index && 
+           ch < font->first_codepoint_index + font->codepoint_count);
     
-    i32 font_index = ch - font.first_codepoint_index;
-    Codepoint_Metrics metrics = font.metrics[font_index];
+    i32 font_index = ch - font->first_codepoint_index;
+    Codepoint_Metrics metrics = font->metrics[font_index];
     
     Sprite spr;
     spr.index = font_index;
     spr.origin = metrics.origin;
-    spr.atlas = &font.atlas;
+    spr.atlas = &font->atlas;
+    assert(spr.atlas->rects);
     
     rect2 rect = sprite_get_rect(spr);
-    v2 size_pixels = v2_hadamard(rect2_get_size(rect), V2((f32)spr.atlas->bmp.width, (f32)spr.atlas->bmp.height));
+    v2 size_pixels = v2_hadamard(rect2_get_size(rect), 
+                                 V2((f32)spr.atlas->bmp.width,
+                                    (f32)spr.atlas->bmp.height));
     
-    v2 size_meters = v2_div_s(size_pixels, PIXELS_PER_METER);
-    
-    render_save(group);
     Transform letter_t = transform_default();
-    letter_t.scale = v2_to_v3(size_meters, 0);
+    letter_t.scale = v2_to_v3(size_pixels, 0);
     push_sprite(group, spr, letter_t);
     
-    render_restore(group);
-    
-    render_translate(group, V3(size_meters.x, 0, 0));
+    render_translate(group, V3(metrics.advance, 0, 0));
   }
   
   render_restore(group);
@@ -212,6 +215,8 @@ void quad_renderer_destroy(Quad_Renderer *renderer) {
 }
 
 void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp, mat4x4 model_mat, Quad_Instance *instances, u32 instance_count) {
+  DEBUG_COUNTER_BEGIN();
+  
   gl.BindBuffer(GL_ARRAY_BUFFER, renderer->instance_vbo);
   gl.BufferData(GL_ARRAY_BUFFER, instance_count*sizeof(Quad_Instance),
                 instances, GL_DYNAMIC_DRAW);
@@ -223,12 +228,16 @@ void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp, mat4x4 model_mat, 
   
   gl.BindVertexArray(renderer->vao);
   gl.DrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, instance_count);
+  
+  DEBUG_COUNTER_END();
 }
 
 
 
 
 void render_group_init(Arena *arena, State *state, Render_Group *group, i32 item_capacity, v2 screen_size) {
+  DEBUG_COUNTER_BEGIN();
+  
   group->items = arena_push_array(arena, Render_Item, item_capacity);
   group->item_count = 0;
   group->screen_size = screen_size;
@@ -237,9 +246,13 @@ void render_group_init(Arena *arena, State *state, Render_Group *group, i32 item
   group->item_capacity = item_capacity;
   group->state_stack_count = 0;
   group->debug_atlas = &state->debug_atlas;
+  
+  DEBUG_COUNTER_END();
 }
 
 void render_group_output(State *state, Render_Group *group, Quad_Renderer *renderer) {
+  DEBUG_COUNTER_BEGIN();
+  
   assert(group->state_stack_count == 0);
   
   if (group->item_count != 0) {
@@ -307,4 +320,6 @@ void render_group_output(State *state, Render_Group *group, Quad_Renderer *rende
     
     quad_renderer_draw(renderer, &atlas->bmp, view_matrix, instances, sb_count(instances));
   }
+  
+  DEBUG_COUNTER_END();
 }

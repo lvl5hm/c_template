@@ -11,6 +11,8 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
 
+#include "debug.h"
+
 
 /*
 TODO:
@@ -18,7 +20,7 @@ TODO:
 ---- ENGINE ----
 
 [ ] multithreading
- -[ ] thread queues in the windows layer
+ -[x] thread queues in the windows layer
  -[ ] threaded things in the platform layer
  -[ ] all threads can do low priority queue, but
  they wake up from time to time to see if there's work in high priority
@@ -40,7 +42,8 @@ TODO:
  -[ ] b-splines (bezier curves)
  
  [ ] text rendering
- -[ ] proper kerning and line spacing
+ -[ ] kerning
+ -[ ] line spacing
  -[ ] utf-8 support
  -[ ] loading fonts from windows instead of stb??
  
@@ -88,7 +91,7 @@ TODO:
  [ ] ranged projectiles and melee strikes (how do runes affect each?)
  
  [ ] collision
- -[ ] SAT
+ -[x] SAT
  -[ ] tilemap collision
  -[ ] collision rules?
  -[ ] grid / quadtree
@@ -282,43 +285,6 @@ Texture_Atlas make_texture_atlas_from_folder(Platform platform, State *state,  S
 
 #define FONT_HEIGHT 32
 
-typedef struct {
-  Bitmap bmp;
-  Codepoint_Metrics metrics;
-} Codepoint_Parse_Result;
-
-Codepoint_Parse_Result get_codepoint_bitmap(Arena *arena, stbtt_fontinfo font, char c) {
-  i32 width;
-  i32 height;
-  f32 scale = stbtt_ScaleForPixelHeight(&font, FONT_HEIGHT);
-  byte *single_bitmap = stbtt_GetCodepointBitmap(&font, 0, scale, c, &width, &height, 0, 0);
-  Bitmap bitmap = make_empty_bitmap(arena, width, height);
-  
-  i32 x0, y0, x1, y1;
-  stbtt_GetCodepointBitmapBox(&font, c, scale, scale, &x0,&y0,&x1,&y1);
-  
-  u32 *row = (u32 *)bitmap.data + (height-1)*width;
-  for (i32 y = 0; y < height; y++) {
-    u32 *dst = row;
-    for (i32 x = 0; x < width; x++) {
-      byte a = single_bitmap[y*width + x];
-      Pixel pixel;
-      pixel.r = 255;
-      pixel.g = 255;
-      pixel.b = 255;
-      pixel.a = a;
-      *dst++ = pixel.full;
-    }
-    row -= width;
-  }
-  
-  Codepoint_Parse_Result result;
-  result.metrics.origin = V2(0, (f32)y1/height);
-  result.bmp = bitmap;
-  
-  return result;
-}
-
 Font load_ttf(State *state, Platform platform, String file_name) {
   Font result;
   
@@ -337,9 +303,49 @@ Font load_ttf(State *state, Platform platform, String file_name) {
   
   Bitmap *bitmaps = sb_init(&state->temp, Bitmap, result.codepoint_count, false);
   for (char ch = result.first_codepoint_index; ch < last_codepoint_index; ch++) {
-    Codepoint_Parse_Result codepoint = get_codepoint_bitmap(&state->temp, font, ch);
-    sb_push(bitmaps, codepoint.bmp);
-    sb_push(result.metrics, codepoint.metrics);
+    i32 width;
+    i32 height;
+    f32 scale = stbtt_ScaleForPixelHeight(&font, FONT_HEIGHT);
+    byte *single_bitmap = stbtt_GetCodepointBitmap(&font, 0, scale, ch, &width, &height, 0, 0);
+    Bitmap bitmap = make_empty_bitmap(&state->temp, width, height);
+    
+    i32 x0, y0, x1, y1;
+    stbtt_GetCodepointBitmapBox(&font, ch, scale, scale, &x0,&y0,&x1,&y1);
+    
+    u32 *row = (u32 *)bitmap.data + (height-1)*width;
+    for (i32 y = 0; y < height; y++) {
+      u32 *dst = row;
+      for (i32 x = 0; x < width; x++) {
+        byte a = single_bitmap[y*width + x];
+        Pixel pixel;
+        pixel.r = 255;
+        pixel.g = 255;
+        pixel.b = 255;
+        pixel.a = a;
+        *dst++ = pixel.full;
+      }
+      row -= width;
+    }
+    
+    Codepoint_Metrics metrics;
+    metrics.origin = V2(0, (f32)y1/height);
+    
+    i32 advance, _lsb;
+    stbtt_GetCodepointHMetrics(&font, ch, &advance, &_lsb);
+    metrics.advance = advance*scale;
+    
+    metrics.kerning = arena_push_array(&state->arena, f32, result.codepoint_count);
+    for (char codepoint_index = 0;
+         codepoint_index< result.codepoint_count;
+         codepoint_index++) {
+      char other_ch = result.first_codepoint_index + codepoint_index;
+      f32 kern = scale*stbtt_GetCodepointKernAdvance(&font, ch, 
+                                                     other_ch);
+      metrics.kerning[codepoint_index] = kern;
+    }
+    
+    sb_push(bitmaps, bitmap);
+    sb_push(result.metrics, metrics);
   }
   
   arena_set_mark(&state->temp, loaded_bitmaps_memory);
@@ -405,6 +411,8 @@ Animation_Frame animation_pack_get_frame(Animation_Pack pack, Animation_Instance
 
 
 void draw_robot(State *state, Render_Group *group) {
+  DEBUG_COUNTER_BEGIN();
+  
   f32 leg_x = 0.1f;
   
   render_save(group);
@@ -470,6 +478,8 @@ void draw_robot(State *state, Render_Group *group) {
   }
   
   render_restore(group);
+  
+  DEBUG_COUNTER_END();
 }
 
 Sprite make_sprite(Texture_Atlas *atlas, i32 index, v2 origin) {
@@ -480,9 +490,110 @@ Sprite make_sprite(Texture_Atlas *atlas, i32 index, v2 origin) {
   return result;
 }
 
+
+b32 collide_aabb_aabb(rect2 a, rect2 b) {
+  b32 result = !(a.max.x < b.min.x ||
+                 a.max.y < b.min.y ||
+                 a.min.x > b.max.x ||
+                 a.min.y > b.max.y);
+  return result;
+}
+
+typedef struct {
+  v2 v[4];
+} Rect_Polygon;
+
+Rect_Polygon aabb_transform(rect2 box, Transform t) {
+  DEBUG_COUNTER_BEGIN();
+  Rect_Polygon result;
+  result.v[0] = box.min;
+  result.v[1] = V2(box.min.x, box.max.y);
+  result.v[2] = box.max;
+  result.v[3] = V2(box.max.x, box.min.y);
+  
+  mat4x4 matrix4 = transform_apply(mat4x4_identity(), t);
+  for (i32 i = 0; i < 4; i++) {
+    result.v[i] = mat4x4_mul_v4(matrix4, v2_to_v4(result.v[i], 1, 1)).xy;
+  }
+  
+  DEBUG_COUNTER_END();
+  return result;
+}
+
+b32 collide_box_box(rect2 a_rect, Transform a_t, rect2 b_rect, Transform b_t) {
+  DEBUG_COUNTER_BEGIN();
+  Rect_Polygon a = aabb_transform(a_rect, a_t);
+  Rect_Polygon b = aabb_transform(b_rect, b_t);
+  
+  v2 normals[4];
+  normals[0] = v2_sub(a.v[1], a.v[0]);
+  normals[1] = v2_sub(a.v[2], a.v[1]);
+  normals[2] = v2_sub(b.v[1], b.v[0]);
+  normals[3] = v2_sub(b.v[2], b.v[1]);
+  
+  b32 result = true;
+  
+  for (i32 normal_index = 0; normal_index < 4; normal_index++) {
+    v2 n = normals[normal_index];
+    
+    Range a_range = inverted_infinity_range();
+    Range b_range = inverted_infinity_range();
+    
+    for (i32 vertex_index = 0; vertex_index < 4; vertex_index++) {
+      {
+        v2 vertex = a.v[vertex_index];
+        f32 dot = v2_dot(vertex, n);
+        if (dot < a_range.min) {
+          a_range.min = dot;
+        }
+        if (dot > a_range.max) {
+          a_range.max = dot;
+        }
+      }
+      
+      {
+        v2 vertex = b.v[vertex_index];
+        f32 dot = v2_dot(vertex, n);
+        if (dot < b_range.min) {
+          b_range.min = dot;
+        }
+        if (dot > b_range.max) {
+          b_range.max = dot;
+        }
+      }
+    }
+    
+    if (a_range.max < b_range.min || a_range.min > b_range.max) {
+      result = false;
+      break;
+    }
+  }
+  
+  DEBUG_COUNTER_END();
+  return result;
+}
+
 #define SCRATCH_SIZE kilobytes(32)
 
+void debug_render_node(State *state, Render_Group *group, Debug_Node *node) {
+  String str = arena_sprintf(&state->scratch,
+                             const_string("%s: %i"),
+                             node->name,
+                             node->cycle_count);
+  push_text(group, &state->font, str, transform_default());
+  render_translate(group, V3(0, -0.4f, 0));
+  
+  if (node->is_open) {
+    for (u32 child_index = 0; child_index < sb_count(node->children); 
+         child_index++) {
+      debug_render_node(state, group, &node->children[child_index]);
+    }
+  }
+}
+
 extern GAME_UPDATE(game_update) {
+  DEBUG_COUNTER_BEGIN();
+  
   State *state = (State *)memory.perm;
   Arena *arena = &state->arena;
   
@@ -495,12 +606,13 @@ extern GAME_UPDATE(game_update) {
   }
   
   if (!state->is_initialized) {
+    state->frame_count = 0;
     state->rand = make_random_sequence(2312323342);
     
     // NOTE(lvl5): font stuff
     
-    //state->font = load_ttf(state, platform, const_string("Gugi-Regular.ttf"));
-    state->font = load_ttf(state, platform, const_string("arial.ttf"));
+    state->font = load_ttf(state, platform, const_string("Gugi-Regular.ttf"));
+    //state->font = load_ttf(state, platform, const_string("arial.ttf"));
     
     Buffer shader_src = platform.read_entire_file(const_string("basic.glsl"));
     gl_Parse_Result sources = gl_parse_glsl(buffer_to_string(shader_src));
@@ -527,6 +639,7 @@ extern GAME_UPDATE(game_update) {
     quad_renderer_init(&state->renderer, state);
     add_entity(state, Entity_Type_NONE); // filler entity
     add_entity(state, Entity_Type_PLAYER);
+    add_entity(state, Entity_Type_ENEMY);
     
 #include "robot_animation.h"
     state->is_initialized = true;
@@ -537,28 +650,43 @@ extern GAME_UPDATE(game_update) {
   }
   
   
-  u64 render_memory = arena_get_mark(&state->temp);
-  Render_Group group;
-  render_group_init(&state->temp, state, &group, 100000, v2i_to_v2(screen_size));
-  
-#if 0  
   v2 screen_size_v2 = v2i_to_v2(screen_size);
   v2 screen_size_meters = v2_div_s(screen_size_v2, PIXELS_PER_METER);
   v2 half_screen_size_meters = v2_div_s(screen_size_meters, 2);
+#if 0  
   v2 mouse_p_meters = v2_div_s(input.mouse.p, PIXELS_PER_METER);
 #endif
+  
+  
+  u64 render_memory = arena_get_mark(&state->temp);
+  Render_Group group;
+  render_group_init(&state->temp, state, &group, 100000, v2i_to_v2(screen_size));
   
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
     Entity *entity = get_entity(state, entity_index);
     
     switch (entity->type) {
+      case Entity_Type_ENEMY: {
+        entity->t.angle += 0.01f;
+        entity->t.p = V3(2.0f, 0, 0);
+        render_save(&group);
+        render_transform(&group, entity->t);
+        
+        push_rect(&group, rect2_center_size(V2(0, 0), V2(1, 1)), V4(1, 0, 0, 1));
+        
+        
+        render_restore(&group);
+      } break;
       case Entity_Type_PLAYER: {
 #define PLAYER_SPEED 0.03f
         
+        if (input.start.is_down) {
+          entity->t.angle += 0.01f;
+        }
+        
         entity->t.scale = V3(1, 1, 1);
         //String text = scratch_sprintf(const_string("robot is at (%i, %i)"), (i32)entity->t.p.x, (i32)entity->t.p.y);
-        String text = const_string("         -53");
-        push_text(&group, state->font, text, entity->t);
+        
         
 #if 1
         i32 h_speed = (input.move_right.is_down - 
@@ -604,14 +732,32 @@ extern GAME_UPDATE(game_update) {
         
         
         render_save(&group);
-        //render_color(&group, V4(0, 1, 0, 1));
         render_transform(&group, entity->t);
         
-        render_color(&group, V4(0, 1, 1, 1));
+        
+        rect2 rect_1m = rect2_center_size(V2(0, 0), V2(1, 1));
+        
+        b32 collision = false;
+        for (i32 other_index = 1;
+             other_index < state->entity_count;
+             other_index++) {
+          if (other_index != entity_index) {
+            Entity *other = get_entity(state, other_index);
+            if (collide_box_box(rect_1m, entity->t, rect_1m, other->t)) {
+              collision = true;
+              break;
+            }
+          }
+        }
+        
+#if 0        
+        if (collision) {
+          push_rect(&group, rect_1m, V4(0, 1, 1, 1));
+        } else {
+          push_rect(&group, rect_1m, V4(0, 1, 0, 1));
+        }
+#endif
         draw_robot(state, &group);
-        
-        push_rect(&group, rect2_center_size(V2(0, 0), V2(1, 1)), V4(1, 0, 1, 1));
-        
         
         render_restore(&group);
 #endif
@@ -627,5 +773,63 @@ extern GAME_UPDATE(game_update) {
   
   
   arena_set_mark(&state->temp, render_memory);
+  
+  DEBUG_COUNTER_END();
+  
+  
+  
+  if (true) {
+    u64 debug_render_memory = arena_get_mark(&state->temp);
+    
+    Debug_Node *node_stack[32];
+    i32 stack_count = 1;
+    
+    Debug_Node root;
+    root.is_open = true;
+    root.cycle_count = 0;
+    root.name = const_string("root");
+    root.children = sb_init(&state->temp, Debug_Node, 8, true);
+    node_stack[0] = &root;
+    
+    for (u32 event_index = 0; event_index < debug_event_count; event_index++) {
+      Debug_Event *event = debug_events + event_index;
+      Debug_Node *parent = node_stack[stack_count-1];
+      
+      if (event->type == Debug_Type_BEGIN_TIMER) {
+        sb_push(parent->children, (Debug_Node){0});
+        Debug_Node *node = parent->children + sb_count(parent->children)-1;
+        node->name = alloc_string(&state->temp, event->name, c_string_length(event->name));
+        node->is_open = true;
+        node->children = sb_init(&state->temp, Debug_Node, 8, true);
+        node->cycle_count = event->cycles;
+        node_stack[stack_count++] = node;
+      } else if (event->type == Debug_Type_END_TIMER) {
+        parent->cycle_count = event->cycles - parent->cycle_count;
+        stack_count--;
+      }
+    }
+    
+    Render_Group group;
+    render_group_init(&state->temp, state, &group, 1000, v2i_to_v2(screen_size)); 
+    
+    render_save(&group);
+    v3 text_p = V3(-half_screen_size_meters.x + 0.1f, 
+                   half_screen_size_meters.y - 0.2f, 0);
+    render_translate(&group, text_p);
+    render_scale(&group, V3(0.5f, 0.5f, 0));
+    
+    Debug_Node *node = root.children + 0;
+    debug_render_node(state, &group, node);
+    
+    render_restore(&group);
+    render_group_output(state, &group, &state->renderer);
+    
+    debug_event_count = 0;
+    arena_set_mark(&state->temp, debug_render_memory);
+  }
+  
+  
   arena_set_mark(&state->scratch, 0);
+  
+  state->frame_count++;
 }
