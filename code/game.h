@@ -80,6 +80,8 @@ typedef struct {
   Arena scratch;
   Arena temp;
   
+  Arena debug_arena;
+  
   Entity entities[40000];
   i32 entity_count;
   

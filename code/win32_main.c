@@ -745,10 +745,6 @@ int CALLBACK WinMain(HINSTANCE instance,
                          &unusedIds,
                          true);
   
-  
-  v2i game_screen = V2i(WINDOW_WIDTH, WINDOW_HEIGHT);
-  
-  
   // NOTE(lvl5): init sound
   {
     win32_Sound win32_sound;
@@ -787,6 +783,7 @@ int CALLBACK WinMain(HINSTANCE instance,
   state.dt = 0;
   
   f64 last_time = win32_get_time();
+  u64 last_cycles = __rdtsc();
   
   Platform platform;
   platform.request_sound_buffer = win32_request_sound_buffer;
@@ -848,6 +845,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     f64 time_frame_start = win32_get_time();
+    u64 cycles_frame_start = __rdtsc();
     
     for (u32 button_index = 0; 
          button_index < array_count(game_input.buttons);
@@ -862,8 +860,14 @@ int CALLBACK WinMain(HINSTANCE instance,
     game_input.mouse.right.went_down = false;
     
     
+    RECT client_rect;
+    GetClientRect(window, &client_rect);
+    v2 game_screen = V2((f32)(client_rect.right - client_rect.left),
+                        (f32)(client_rect.bottom - client_rect.top));
+    
     RECT window_rect;
     GetWindowRect(window, &window_rect);
+    
     
     POINT mouse_p;
     GetCursorPos(&mouse_p);
@@ -955,7 +959,6 @@ int CALLBACK WinMain(HINSTANCE instance,
       game_input = win32_replay_get_next_input(game_memory);
     }
     
-    
     game_update(game_screen, game_memory, game_input, state.dt, platform);
     
     if (state.game_sound_buffer.count) {
@@ -969,11 +972,17 @@ int CALLBACK WinMain(HINSTANCE instance,
     state.dt = (f32)(current_time - last_time);
     if (state.dt > 0.1f) state.dt = 1.0f/TARGET_FPS;
     
+    
+    u64 current_cycles = __rdtsc();
+    u64 cycles_per_frame = current_cycles - last_cycles;
+    u64 cycles_used = current_cycles - cycles_frame_start;
+    
     last_time = current_time;
+    last_cycles = current_cycles;
     
     char buffer[256];
-    sprintf_s(buffer, 256, "%.4f ms  %d samples\n", time_used*1000.0f, state.game_sound_buffer.count);
-    //OutputDebugStringA(buffer);
+    sprintf_s(buffer, 256, "%.4f ms  %lld cycles\n", time_used*1000.0f, cycles_used);
+    OutputDebugStringA(buffer);
     
     arena_set_mark(&state.scratch, 0);
     SwapBuffers(device_context);

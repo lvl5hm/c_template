@@ -59,6 +59,7 @@ void *__grow(void **arr_ptr, u64 item_size, b32 is_growable) {
   u32 header_size = sizeof(sb_Header);
   result = arena_push_size(header->arena, 
                            new_capacity*item_size + header_size) + header_size;
+  copy_memory_slow(result, arr, header->capacity*item_size);
   
   sb_count(result) = header->count;
   sb_capacity(result) = new_capacity;

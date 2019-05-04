@@ -4,10 +4,14 @@
 
 
 mat4x4 transform_apply(mat4x4 matrix, Transform t) {
+  DEBUG_COUNTER_BEGIN();
+  
   mat4x4 result = matrix;
   result = mat4x4_translate(result, t.p);
   result = mat4x4_rotate(result, t.angle);
   result = mat4x4_scale(result, t.scale);
+  
+  DEBUG_COUNTER_END();
   return result;
 }
 
@@ -68,6 +72,7 @@ Render_Item *push_render_item_(Render_Group *group, Render_Type type) {
 }
 
 void push_sprite(Render_Group *group, Sprite sprite, Transform t) {
+  DEBUG_COUNTER_BEGIN();
   if (group->item_count == 20) {
     assert(sprite.atlas->rects);
   }
@@ -79,6 +84,7 @@ void push_sprite(Render_Group *group, Sprite sprite, Transform t) {
   Render_Sprite *item = push_render_item(group, Sprite);
   item->sprite = sprite;
   render_restore(group);
+  DEBUG_COUNTER_END();
 }
 
 void push_rect(Render_Group *group, rect2 rect, v4 color) {
@@ -98,10 +104,16 @@ void push_rect(Render_Group *group, rect2 rect, v4 color) {
   render_restore(group);
 }
 
+globalvar v3 text_pixel_align = {0};
+
+
 void push_text(Render_Group *group, Font *font, String text, Transform t) {
+  DEBUG_COUNTER_BEGIN();
+  
   render_save(group);
   render_transform(group, t);
   render_scale(group, v3_invert(V3(PIXELS_PER_METER, PIXELS_PER_METER, 1)));
+  render_translate(group, text_pixel_align);
   
   for (u32 char_index = 0; char_index < text.count; char_index++) {
     char ch = text.data[char_index];
@@ -135,6 +147,8 @@ void push_text(Render_Group *group, Font *font, String text, Transform t) {
   }
   
   render_restore(group);
+  
+  DEBUG_COUNTER_END();
 }
 
 
@@ -250,13 +264,13 @@ void render_group_init(Arena *arena, State *state, Render_Group *group, i32 item
   DEBUG_COUNTER_END();
 }
 
-void render_group_output(State *state, Render_Group *group, Quad_Renderer *renderer) {
+void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *renderer) {
   DEBUG_COUNTER_BEGIN();
   
   assert(group->state_stack_count == 0);
   
   if (group->item_count != 0) {
-    Quad_Instance *instances = sb_init(&state->temp, Quad_Instance, group->item_count, false);
+    Quad_Instance *instances = sb_init(arena, Quad_Instance, group->item_count, false);
     
     Texture_Atlas *atlas = 0;
     

@@ -12,6 +12,7 @@
 #include "stb_truetype.h"
 
 #include "debug.h"
+#include <stdio.h>
 
 
 /*
@@ -283,7 +284,7 @@ Texture_Atlas make_texture_atlas_from_folder(Platform platform, State *state,  S
   return result;
 }
 
-#define FONT_HEIGHT 32
+#define FONT_HEIGHT 16
 
 Font load_ttf(State *state, Platform platform, String file_name) {
   Font result;
@@ -357,6 +358,7 @@ Font load_ttf(State *state, Platform platform, String file_name) {
 }
 
 Animation_Frame animation_get_frame(Animation *anim, f32 main_position) {
+  DEBUG_COUNTER_BEGIN();
   f32 position = main_position*anim->speed;
   position -= (i32)position;
   
@@ -381,11 +383,13 @@ Animation_Frame animation_get_frame(Animation *anim, f32 main_position) {
     result.color = lerp_v4(prev.color, next.color, V4(c, c, c, c));
   }
   
+  DEBUG_COUNTER_END();
   return result;
 }
 
 
 Animation_Frame animation_pack_get_frame(Animation_Pack pack, Animation_Instance inst) {
+  DEBUG_COUNTER_BEGIN();
   Animation_Frame result = {0};
   
   f32 total_weight = 0;
@@ -406,6 +410,7 @@ Animation_Frame animation_pack_get_frame(Animation_Pack pack, Animation_Instance
     result.t.angle = result.t.angle + frame.t.angle*coeff;
   }
   
+  DEBUG_COUNTER_END();
   return result;
 }
 
@@ -575,21 +580,59 @@ b32 collide_box_box(rect2 a_rect, Transform a_t, rect2 b_rect, Transform b_t) {
 
 #define SCRATCH_SIZE kilobytes(32)
 
-void debug_render_node(State *state, Render_Group *group, Debug_Node *node) {
-  String str = arena_sprintf(&state->scratch,
-                             const_string("%s: %i"),
-                             node->name,
-                             node->cycle_count);
-  push_text(group, &state->font, str, transform_default());
-  render_translate(group, V3(0, -0.4f, 0));
+b32 point_in_rect(v2 point, rect2 rect) {
+  b32 result = point.x > rect.min.x &&
+    point.x < rect.max.x &&
+    point.y > rect.min.y &&
+    point.y < rect.max.y;
+  return result;
+}
+
+void debug_render_node(game_Input *input, State *state, Render_Group *group, Debug_Node *node) {
+  f32 percent = node->parent
+    ? (f32)node->cycle_count/(f32)node->parent->cycle_count*100
+    : 100;
   
-  if (node->is_open) {
-    for (u32 child_index = 0; child_index < sb_count(node->children); 
-         child_index++) {
-      debug_render_node(state, group, &node->children[child_index]);
+  char buffer[256];
+  sprintf_s(buffer, array_count(buffer), "%s: %.2f%%  (%lld)",
+            to_c_string(&state->debug_arena, node->name), percent, node->cycle_count);
+  
+  String str = from_c_string(buffer);
+  
+  rect2 rect = rect2_apply_matrix(rect2_min_size(V2(0, 0), V2(3, 0.2f)), 
+                                  group->state.matrix);
+  
+  v2 screen_size_meters = v2_div_s(group->screen_size, PIXELS_PER_METER);
+  v2 half_screen_size_meters = v2_div_s(screen_size_meters, 2);
+  v2 mouse_p_meters = v2_sub(v2_div_s(input->mouse.p, PIXELS_PER_METER),
+                             half_screen_size_meters);
+  
+  
+  
+  if (point_in_rect(mouse_p_meters, rect)) {
+    render_color(group, V4(0, 1, 0, 1));
+    if (input->mouse.left.went_down) {
+      node->is_open = !node->is_open;
     }
   }
+  
+  push_text(group, &state->font, str, transform_default());
+  render_color(group, V4(1, 1, 1, 1));
+  
+  render_translate(group, V3(0, -0.2f, 0));
+  
+  if (node->is_open && sb_count(node->children)) {
+    v3 child_trans = V3(0.1f, 0, 0);
+    render_translate(group, child_trans);
+    for (u32 child_index = 0; child_index < sb_count(node->children); 
+         child_index++) {
+      debug_render_node(input, state, group, &node->children[child_index]);
+    }
+    render_translate(group, v3_mul_s(child_trans, -1));
+  }
 }
+
+
 
 extern GAME_UPDATE(game_update) {
   DEBUG_COUNTER_BEGIN();
@@ -603,6 +646,7 @@ extern GAME_UPDATE(game_update) {
     arena_init(&state->arena, memory.perm + sizeof(State), memory.perm_size - sizeof(State));
     arena_init(&state->scratch, memory.temp, SCRATCH_SIZE);
     arena_init(&state->temp, memory.temp + SCRATCH_SIZE, memory.temp_size - SCRATCH_SIZE);
+    arena_init_subarena(&state->temp, &state->debug_arena, megabytes(32));
   }
   
   if (!state->is_initialized) {
@@ -611,8 +655,8 @@ extern GAME_UPDATE(game_update) {
     
     // NOTE(lvl5): font stuff
     
-    state->font = load_ttf(state, platform, const_string("Gugi-Regular.ttf"));
-    //state->font = load_ttf(state, platform, const_string("arial.ttf"));
+    //state->font = load_ttf(state, platform, const_string("Gugi-Regular.ttf"));
+    state->font = load_ttf(state, platform, const_string("arial.ttf"));
     
     Buffer shader_src = platform.read_entire_file(const_string("basic.glsl"));
     gl_Parse_Result sources = gl_parse_glsl(buffer_to_string(shader_src));
@@ -650,17 +694,17 @@ extern GAME_UPDATE(game_update) {
   }
   
   
-  v2 screen_size_v2 = v2i_to_v2(screen_size);
-  v2 screen_size_meters = v2_div_s(screen_size_v2, PIXELS_PER_METER);
+  v2 screen_size_meters = v2_div_s(screen_size, PIXELS_PER_METER);
   v2 half_screen_size_meters = v2_div_s(screen_size_meters, 2);
-#if 0  
-  v2 mouse_p_meters = v2_div_s(input.mouse.p, PIXELS_PER_METER);
-#endif
+  v2 mouse_p_meters = v2_sub(v2_div_s(input.mouse.p, PIXELS_PER_METER), 
+                             half_screen_size_meters);
   
   
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group group;
-  render_group_init(&state->temp, state, &group, 100000, v2i_to_v2(screen_size));
+  render_group_init(&state->temp, state, &group, 100000, screen_size);
+  
+  push_rect(&group, rect2_center_size(mouse_p_meters, V2(0.1f, 0.1f)), V4(1, 0, 0, 1));
   
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
     Entity *entity = get_entity(state, entity_index);
@@ -678,7 +722,6 @@ extern GAME_UPDATE(game_update) {
         render_restore(&group);
       } break;
       case Entity_Type_PLAYER: {
-#define PLAYER_SPEED 0.03f
         
         if (input.start.is_down) {
           entity->t.angle += 0.01f;
@@ -695,7 +738,13 @@ extern GAME_UPDATE(game_update) {
                        input.move_down.is_down);
         
         //entity->t.p = v2_to_v3(v2_sub(mouse_p_meters, half_screen_size_meters), 0);
-        v3 d_p = v3_mul_s(V3((f32)h_speed, (f32)v_speed, 0), PLAYER_SPEED);entity->t.p = v3_add(entity->t.p, d_p);
+#define PLAYER_SPEED 0.1f
+        
+        v3 d_p = v3_mul_s(V3((f32)h_speed, (f32)v_speed, 0), PLAYER_SPEED);
+        text_pixel_align = v3_add(text_pixel_align, d_p);
+#if 0
+        entity->t.p = v3_add(entity->t.p, d_p);
+#endif
         entity->t.scale = V3(1, 1, 1);
         if (entity->t.scale.x == 0) {
           entity->t.scale.x = 1;
@@ -769,7 +818,7 @@ extern GAME_UPDATE(game_update) {
   
   gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   gl.Clear(GL_COLOR_BUFFER_BIT);
-  render_group_output(state, &group, &state->renderer);
+  render_group_output(&state->temp, &group, &state->renderer);
   
   
   arena_set_mark(&state->temp, render_memory);
@@ -777,59 +826,64 @@ extern GAME_UPDATE(game_update) {
   DEBUG_COUNTER_END();
   
   
-  
-  if (true) {
-    u64 debug_render_memory = arena_get_mark(&state->temp);
-    
-    Debug_Node *node_stack[32];
-    i32 stack_count = 1;
-    
+  if (state->frame_count == 200) {
     Debug_Node root;
     root.is_open = true;
-    root.cycle_count = 0;
-    root.name = const_string("root");
-    root.children = sb_init(&state->temp, Debug_Node, 8, true);
-    node_stack[0] = &root;
+    root.cycle_count = 40891803;
+    root.name = const_string("frame");
+    root.children = sb_init(&state->debug_arena, Debug_Node, 8, true);
+    
+    Debug_Node *current_node = &root;
     
     for (u32 event_index = 0; event_index < debug_event_count; event_index++) {
       Debug_Event *event = debug_events + event_index;
-      Debug_Node *parent = node_stack[stack_count-1];
       
       if (event->type == Debug_Type_BEGIN_TIMER) {
-        sb_push(parent->children, (Debug_Node){0});
-        Debug_Node *node = parent->children + sb_count(parent->children)-1;
-        node->name = alloc_string(&state->temp, event->name, c_string_length(event->name));
-        node->is_open = true;
-        node->children = sb_init(&state->temp, Debug_Node, 8, true);
+        sb_push(current_node->children, (Debug_Node){0});
+        Debug_Node *node = current_node->children +
+          sb_count(current_node->children)-1;
+        node->name = alloc_string(&state->debug_arena,
+                                  event->name, c_string_length(event->name));
+        node->is_open = false;
+        node->children = sb_init(&state->debug_arena, Debug_Node, 8, true);
         node->cycle_count = event->cycles;
-        node_stack[stack_count++] = node;
+        node->parent = current_node;
+        current_node = node;
       } else if (event->type == Debug_Type_END_TIMER) {
-        parent->cycle_count = event->cycles - parent->cycle_count;
-        stack_count--;
+        current_node->cycle_count = event->cycles - 
+          current_node->cycle_count;
+        current_node = current_node->parent;
       }
     }
     
+    debug_root = root;
+  } else {
+    debug_event_count = 0;
+  }
+  
+  if (debug_root.children) {
+    u64 debug_render_memory = arena_get_mark(&state->debug_arena);
+    
     Render_Group group;
-    render_group_init(&state->temp, state, &group, 1000, v2i_to_v2(screen_size)); 
+    render_group_init(&state->debug_arena, state, &group, 10000, screen_size); 
     
     render_save(&group);
     v3 text_p = V3(-half_screen_size_meters.x + 0.1f, 
                    half_screen_size_meters.y - 0.2f, 0);
     render_translate(&group, text_p);
-    render_scale(&group, V3(0.5f, 0.5f, 0));
     
-    Debug_Node *node = root.children + 0;
-    debug_render_node(state, &group, node);
+    debug_render_node(&input, state, &group, debug_root.children + 0);
     
     render_restore(&group);
-    render_group_output(state, &group, &state->renderer);
+    render_group_output(&state->debug_arena, &group, &state->renderer);
     
-    debug_event_count = 0;
-    arena_set_mark(&state->temp, debug_render_memory);
+    arena_set_mark(&state->debug_arena, debug_render_memory);
   }
   
   
   arena_set_mark(&state->scratch, 0);
   
+  arena_check_no_marks(&state->temp);
+  arena_check_no_marks(&state->arena);
   state->frame_count++;
 }

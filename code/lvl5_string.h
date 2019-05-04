@@ -93,6 +93,13 @@ i32 c_string_length(char *str) {
   return result;
 }
 
+String from_c_string(char *c_string) {
+  String result;
+  result.data = c_string;
+  result.count = c_string_length(c_string);
+  return result;
+}
+
 b32 c_string_compare(char *a, char *b) {
   while (*a) {
     if (*a++ != *b++) {
@@ -167,6 +174,37 @@ String i64_to_string(Arena *arena, i64 num) {
 }
 
 
+String f32_to_string(Arena *arena, f32 num, i32 decimal_count) {
+  i32 int_part = (i32)num;
+  f32 float_part = num - int_part;
+  
+  String int_string = i64_to_string(arena, int_part);
+  
+  i32 leading_zeros = 0;
+  while (true) {
+    char first_digit = (char)(float_part*10);
+    if (first_digit == 0) {
+      leading_zeros++;
+      float_part *= 10;
+    } else {
+      break;
+    }
+  }
+  
+  char *str = arena_push_array(arena, char, 20);
+  str[0] = '.';
+  for (i32 i = 0; i < leading_zeros; i++) {
+    str[i+1] = '0';
+  }
+  String zero_string = alloc_string(arena, str, leading_zeros+1);
+  
+  float_part *= 10*(decimal_count - leading_zeros);
+  String float_string = i64_to_string(arena, (i64)float_part);
+  
+  String result = concat(arena, int_string, concat(arena, zero_string, float_string));
+  return result;
+}
+
 String arena_sprintf(Arena *arena, String fmt, ...) {
   String result = {0};
   
@@ -179,13 +217,21 @@ String arena_sprintf(Arena *arena, String fmt, ...) {
       if (fmt.data[i+1] == 'i') {
         i64 num = va_arg(args, i64);
         String str = i64_to_string(arena, num);
-        
         result = concat(arena, result, str);
         i += 1;
       } else if (fmt.data[i+1] == 's') {
         String str = va_arg(args, String);
         result = concat(arena, result, str);
         i += 1;
+      } else if (fmt.data[i+1] == '.') {
+        byte decimal_count = fmt.data[i+2] - '0';
+        assert(fmt.data[i+3] == 'f');
+        f32 num = va_arg(args, f32);
+        String str = f32_to_string(arena, num, decimal_count);
+        result = concat(arena, result, str);
+        i += 3;
+      } else {
+        result = concat(arena, result, make_string(&fmt.data[i], 1));
       }
     } else {
       result = concat(arena, result, make_string(&fmt.data[i], 1));

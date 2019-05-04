@@ -17,6 +17,7 @@ typedef struct {
 globalvar Debug_Event debug_events[20000];
 globalvar u32 debug_event_count = 0;
 
+
 #define DEBUG_COUNTER_BEGIN() \
 i32 __debug_id = __COUNTER__; \
 debug_log_event(__debug_id, Debug_Type_BEGIN_TIMER, __func__, __rdtsc())
@@ -41,8 +42,13 @@ struct Debug_Node {
   b32 is_open;
   u64 cycle_count;
   String name;
+  Debug_Node *parent;
   Debug_Node *children;
 };
+
+globalvar Debug_Node debug_root;
+globalvar i32 debug_frame_count;
+
 
 #define DEBUG_H
 #endif

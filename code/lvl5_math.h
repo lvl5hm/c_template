@@ -653,6 +653,19 @@ v2 rect2_get_center(rect2 r) {
   return result;
 }
 
+rect2 rect2_translate(rect2 r, v2 v) {
+  rect2 result;
+  result.min = v2_add(r.min, v);
+  result.max = v2_add(r.max, v);
+  return result;
+}
+
+rect2 rect2_apply_matrix(rect2 r, mat4x4 m) {
+  rect2 result;
+  result.min = mat4x4_mul_v4(m, v2_to_v4(r.min, 1, 1)).xy;
+  result.max = mat4x4_mul_v4(m, v2_to_v4(r.max, 1, 1)).xy;
+  return result;
+}
 
 // rect2i
 

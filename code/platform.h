@@ -109,7 +109,7 @@ typedef PLATFORM_READ_FILE(Platform_Read_File);
 #define PLATFORM_CLOSE_FILE(name) void name(File_Handle file)
 typedef PLATFORM_CLOSE_FILE(Platform_Close_File);
 
-#define GAME_UPDATE(name) void name(v2i screen_size, game_Memory memory, game_Input input, f32 dt, Platform platform)
+#define GAME_UPDATE(name) void name(v2 screen_size, game_Memory memory, game_Input input, f32 dt, Platform platform)
 
 #define WORKER_FN(name) void name(void *data)
 typedef WORKER_FN(Worker_Fn);
