@@ -30,6 +30,7 @@ typedef void FNGLGENERATEMIPMAPPROC(GLenum thing);
 typedef void FNGLENABLEPROC(GLenum thing);
 typedef void FNGLBLENDFUNCPROC(GLenum src, GLenum dst);
 typedef void FNGLDELETETEXTURESPROC(GLsizei n, GLuint *textures);
+typedef void FNGLVIEWPORTPROC(GLint x, GLint y, GLsizei width, GLsizei height);
 
 typedef struct {
   PFNGLGENBUFFERSPROC GenBuffers;
@@ -81,7 +82,7 @@ typedef struct {
   FNGLENABLEPROC *Enable;
   FNGLBLENDFUNCPROC *BlendFunc;
   FNGLDELETETEXTURESPROC *DeleteTextures;
-  
+  FNGLVIEWPORTPROC *Viewport;
 } gl_Funcs;
 
 typedef struct {

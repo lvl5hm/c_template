@@ -47,6 +47,7 @@ typedef struct {
 
 
 typedef struct {
+  b32 window_resized;
   u64 performance_frequency;
   f32 dt;
   b32 running;
@@ -145,6 +146,7 @@ gl_Funcs gl_load_functions() {
   load_opengl_proc(BlendFunc);
   load_opengl_proc(Enable);
   load_opengl_proc(DeleteTextures);
+  load_opengl_proc(Viewport);
   
   return funcs;
 }
@@ -511,8 +513,11 @@ LRESULT CALLBACK WindowProc(HWND window,
                             UINT message,
                             WPARAM wParam,
                             LPARAM lParam) {
-  switch (message)
-  {
+  switch (message) {
+    case WM_SIZE: {
+      state.window_resized = true;
+    } break;
+    
     case WM_DESTROY:
     case WM_CLOSE:
     case WM_QUIT: 
@@ -843,6 +848,13 @@ int CALLBACK WinMain(HINSTANCE instance,
       }
     }
     
+    if (state.window_resized) {
+      game_memory.window_resized = true;
+      state.window_resized = false;
+    } else {
+      game_memory.window_resized = false;
+    }
+    
     
     f64 time_frame_start = win32_get_time();
     u64 cycles_frame_start = __rdtsc();
@@ -865,14 +877,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     v2 game_screen = V2((f32)(client_rect.right - client_rect.left),
                         (f32)(client_rect.bottom - client_rect.top));
     
-    RECT window_rect;
-    GetWindowRect(window, &window_rect);
-    
-    
     POINT mouse_p;
     GetCursorPos(&mouse_p);
-    game_input.mouse.p.x = (f32)(mouse_p.x - window_rect.left);
-    game_input.mouse.p.y = (f32)(window_rect.bottom - window_rect.top - mouse_p.y + window_rect.top);
+    ScreenToClient(window, &mouse_p);
+    game_input.mouse.p.x = (f32)mouse_p.x;
+    game_input.mouse.p.y = (f32)(client_rect.bottom - mouse_p.y);
     
     while (PeekMessage(&message, window, 0, 0, PM_REMOVE)) 
     {

@@ -358,7 +358,7 @@ Font load_ttf(State *state, Platform platform, String file_name) {
 }
 
 Animation_Frame animation_get_frame(Animation *anim, f32 main_position) {
-  DEBUG_COUNTER_BEGIN();
+  DEBUG_FUNCTION_BEGIN();
   f32 position = main_position*anim->speed;
   position -= (i32)position;
   
@@ -383,13 +383,13 @@ Animation_Frame animation_get_frame(Animation *anim, f32 main_position) {
     result.color = lerp_v4(prev.color, next.color, V4(c, c, c, c));
   }
   
-  DEBUG_COUNTER_END();
+  DEBUG_FUNCTION_END();
   return result;
 }
 
 
 Animation_Frame animation_pack_get_frame(Animation_Pack pack, Animation_Instance inst) {
-  DEBUG_COUNTER_BEGIN();
+  DEBUG_FUNCTION_BEGIN();
   Animation_Frame result = {0};
   
   f32 total_weight = 0;
@@ -410,13 +410,13 @@ Animation_Frame animation_pack_get_frame(Animation_Pack pack, Animation_Instance
     result.t.angle = result.t.angle + frame.t.angle*coeff;
   }
   
-  DEBUG_COUNTER_END();
+  DEBUG_FUNCTION_END();
   return result;
 }
 
 
 void draw_robot(State *state, Render_Group *group) {
-  DEBUG_COUNTER_BEGIN();
+  DEBUG_FUNCTION_BEGIN();
   
   f32 leg_x = 0.1f;
   
@@ -484,7 +484,7 @@ void draw_robot(State *state, Render_Group *group) {
   
   render_restore(group);
   
-  DEBUG_COUNTER_END();
+  DEBUG_FUNCTION_END();
 }
 
 Sprite make_sprite(Texture_Atlas *atlas, i32 index, v2 origin) {
@@ -509,7 +509,7 @@ typedef struct {
 } Rect_Polygon;
 
 Rect_Polygon aabb_transform(rect2 box, Transform t) {
-  DEBUG_COUNTER_BEGIN();
+  DEBUG_FUNCTION_BEGIN();
   Rect_Polygon result;
   result.v[0] = box.min;
   result.v[1] = V2(box.min.x, box.max.y);
@@ -521,12 +521,12 @@ Rect_Polygon aabb_transform(rect2 box, Transform t) {
     result.v[i] = mat4x4_mul_v4(matrix4, v2_to_v4(result.v[i], 1, 1)).xy;
   }
   
-  DEBUG_COUNTER_END();
+  DEBUG_FUNCTION_END();
   return result;
 }
 
 b32 collide_box_box(rect2 a_rect, Transform a_t, rect2 b_rect, Transform b_t) {
-  DEBUG_COUNTER_BEGIN();
+  DEBUG_FUNCTION_BEGIN();
   Rect_Polygon a = aabb_transform(a_rect, a_t);
   Rect_Polygon b = aabb_transform(b_rect, b_t);
   
@@ -574,7 +574,7 @@ b32 collide_box_box(rect2 a_rect, Transform a_t, rect2 b_rect, Transform b_t) {
     }
   }
   
-  DEBUG_COUNTER_END();
+  DEBUG_FUNCTION_END();
   return result;
 }
 
@@ -598,7 +598,6 @@ void debug_render_node(game_Input *input, State *state, Render_Group *group, Deb
             to_c_string(&state->debug_arena, node->name), percent, node->cycle_count);
   
   String str = from_c_string(buffer);
-  
   rect2 rect = rect2_apply_matrix(rect2_min_size(V2(0, 0), V2(3, 0.2f)), 
                                   group->state.matrix);
   
@@ -607,9 +606,7 @@ void debug_render_node(game_Input *input, State *state, Render_Group *group, Deb
   v2 mouse_p_meters = v2_sub(v2_div_s(input->mouse.p, PIXELS_PER_METER),
                              half_screen_size_meters);
   
-  
-  
-  if (point_in_rect(mouse_p_meters, rect)) {
+  if (sb_count(node->children) && point_in_rect(mouse_p_meters, rect)) {
     render_color(group, V4(0, 1, 0, 1));
     if (input->mouse.left.went_down) {
       node->is_open = !node->is_open;
@@ -635,7 +632,9 @@ void debug_render_node(game_Input *input, State *state, Render_Group *group, Deb
 
 
 extern GAME_UPDATE(game_update) {
-  DEBUG_COUNTER_BEGIN();
+  debug_begin_frame();
+  
+  DEBUG_FUNCTION_BEGIN();
   
   State *state = (State *)memory.perm;
   Arena *arena = &state->arena;
@@ -693,6 +692,9 @@ extern GAME_UPDATE(game_update) {
     // NOTE(lvl5): transient memory can be destroyed at this point
   }
   
+  if (memory.window_resized) {
+    gl.Viewport(0, 0, (i32)screen_size.x,(i32) screen_size.y);
+  }
   
   v2 screen_size_meters = v2_div_s(screen_size, PIXELS_PER_METER);
   v2 half_screen_size_meters = v2_div_s(screen_size_meters, 2);
@@ -706,6 +708,8 @@ extern GAME_UPDATE(game_update) {
   
   push_rect(&group, rect2_center_size(mouse_p_meters, V2(0.1f, 0.1f)), V4(1, 0, 0, 1));
   
+  rect2 rect_1m = rect2_center_size(V2(0, 0), V2(2, 1));
+  
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
     Entity *entity = get_entity(state, entity_index);
     
@@ -716,7 +720,7 @@ extern GAME_UPDATE(game_update) {
         render_save(&group);
         render_transform(&group, entity->t);
         
-        push_rect(&group, rect2_center_size(V2(0, 0), V2(1, 1)), V4(1, 0, 0, 1));
+        push_rect(&group, rect_1m, V4(1, 0, 0, 1));
         
         
         render_restore(&group);
@@ -738,13 +742,11 @@ extern GAME_UPDATE(game_update) {
                        input.move_down.is_down);
         
         //entity->t.p = v2_to_v3(v2_sub(mouse_p_meters, half_screen_size_meters), 0);
-#define PLAYER_SPEED 0.1f
+#define PLAYER_SPEED 0.03f
         
         v3 d_p = v3_mul_s(V3((f32)h_speed, (f32)v_speed, 0), PLAYER_SPEED);
-        text_pixel_align = v3_add(text_pixel_align, d_p);
-#if 0
         entity->t.p = v3_add(entity->t.p, d_p);
-#endif
+        
         entity->t.scale = V3(1, 1, 1);
         if (entity->t.scale.x == 0) {
           entity->t.scale.x = 1;
@@ -784,8 +786,6 @@ extern GAME_UPDATE(game_update) {
         render_transform(&group, entity->t);
         
         
-        rect2 rect_1m = rect2_center_size(V2(0, 0), V2(1, 1));
-        
         b32 collision = false;
         for (i32 other_index = 1;
              other_index < state->entity_count;
@@ -799,14 +799,14 @@ extern GAME_UPDATE(game_update) {
           }
         }
         
-#if 0        
+#if 1
         if (collision) {
           push_rect(&group, rect_1m, V4(0, 1, 1, 1));
         } else {
           push_rect(&group, rect_1m, V4(0, 1, 0, 1));
         }
 #endif
-        draw_robot(state, &group);
+        //draw_robot(state, &group);
         
         render_restore(&group);
 #endif
@@ -823,20 +823,26 @@ extern GAME_UPDATE(game_update) {
   
   arena_set_mark(&state->temp, render_memory);
   
-  DEBUG_COUNTER_END();
-  
-  
-  if (state->frame_count == 200) {
-    Debug_Node root;
-    root.is_open = true;
-    root.cycle_count = 40891803;
-    root.name = const_string("frame");
-    root.children = sb_init(&state->debug_arena, Debug_Node, 8, true);
+  DEBUG_FUNCTION_END();
+  debug_end_frame();
+#if 0  
+  if (state->frame_count == 10) {
+    Debug_Node *root = &debug_state.view_root;
+    root->is_open = true;
+    root->cycle_count = 40891803;
+    root->name = const_string("frame");
+    root->children = sb_init(&state->debug_arena, Debug_Node, 8, true);
     
-    Debug_Node *current_node = &root;
+    Debug_Node *current_node = root;
     
-    for (u32 event_index = 0; event_index < debug_event_count; event_index++) {
-      Debug_Event *event = debug_events + event_index;
+    Debug_Frame *frame = debug_state.frames + debug_state.frame_index;
+    
+    for (u32 event_index = 0; event_index < frame->event_count; event_index++) {
+      if (event_index == 64) {
+        int foo = 32;
+      }
+      
+      Debug_Event *event = frame->events + event_index;
       
       if (event->type == Debug_Type_BEGIN_TIMER) {
         sb_push(current_node->children, (Debug_Node){0});
@@ -855,13 +861,45 @@ extern GAME_UPDATE(game_update) {
         current_node = current_node->parent;
       }
     }
-    
-    debug_root = root;
-  } else {
-    debug_event_count = 0;
   }
+#endif
   
-  if (debug_root.children) {
+  
+  {
+    u64 debug_render_memory = arena_get_mark(&state->debug_arena);
+    Render_Group group;
+    render_group_init(&state->debug_arena, state, &group, 10000, screen_size); 
+    f32 total_width = 3.0f;
+    f32 rect_width = total_width/array_count(debug_state.frames);
+    
+    for (u32 i = 0; 
+         i < array_count(debug_state.frames); 
+         i++) {
+      u32 frame_index = (debug_state.frame_index + i) % array_count(debug_state.frames);
+      
+      Debug_Frame *frame = debug_state.frames + frame_index;
+      if (frame->event_count && frame_index != debug_state.frame_index) {
+        u64 begin_cycles = frame->events[0].cycles;
+        u64 end_cycles = frame->events[frame->event_count-1].cycles;
+        u64 duration = end_cycles - begin_cycles;
+        
+        f32 rect_height = (f32)duration/40891803*10;
+        if (rect_height > 3) {
+          int foo = 32;
+        }
+        push_rect(&group, 
+                  rect2_min_size(V2(-3.0f, 1.0f),
+                                 V2(rect_width, rect_height)), 
+                  V4(0, 1, 0, 1));
+      }
+      render_translate(&group, V3(rect_width, 0, 0));
+    }
+    
+    render_group_output(&state->debug_arena, &group, &state->renderer);
+    arena_set_mark(&state->debug_arena, debug_render_memory);
+  }
+#if 0  
+  if (debug_state.view_root.children) {
     u64 debug_render_memory = arena_get_mark(&state->debug_arena);
     
     Render_Group group;
@@ -872,7 +910,7 @@ extern GAME_UPDATE(game_update) {
                    half_screen_size_meters.y - 0.2f, 0);
     render_translate(&group, text_p);
     
-    debug_render_node(&input, state, &group, debug_root.children + 0);
+    debug_render_node(&input, state, &group, debug_state.view_root.children + 0);
     
     render_restore(&group);
     render_group_output(&state->debug_arena, &group, &state->renderer);
@@ -880,6 +918,7 @@ extern GAME_UPDATE(game_update) {
     arena_set_mark(&state->debug_arena, debug_render_memory);
   }
   
+#endif
   
   arena_set_mark(&state->scratch, 0);
   

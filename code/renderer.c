@@ -4,14 +4,14 @@
 
 
 mat4x4 transform_apply(mat4x4 matrix, Transform t) {
-  DEBUG_COUNTER_BEGIN();
+  DEBUG_FUNCTION_BEGIN();
   
   mat4x4 result = matrix;
   result = mat4x4_translate(result, t.p);
   result = mat4x4_rotate(result, t.angle);
   result = mat4x4_scale(result, t.scale);
   
-  DEBUG_COUNTER_END();
+  DEBUG_FUNCTION_END();
   return result;
 }
 
@@ -72,7 +72,7 @@ Render_Item *push_render_item_(Render_Group *group, Render_Type type) {
 }
 
 void push_sprite(Render_Group *group, Sprite sprite, Transform t) {
-  DEBUG_COUNTER_BEGIN();
+  DEBUG_FUNCTION_BEGIN();
   if (group->item_count == 20) {
     assert(sprite.atlas->rects);
   }
@@ -84,7 +84,7 @@ void push_sprite(Render_Group *group, Sprite sprite, Transform t) {
   Render_Sprite *item = push_render_item(group, Sprite);
   item->sprite = sprite;
   render_restore(group);
-  DEBUG_COUNTER_END();
+  DEBUG_FUNCTION_END();
 }
 
 void push_rect(Render_Group *group, rect2 rect, v4 color) {
@@ -104,16 +104,12 @@ void push_rect(Render_Group *group, rect2 rect, v4 color) {
   render_restore(group);
 }
 
-globalvar v3 text_pixel_align = {0};
-
-
 void push_text(Render_Group *group, Font *font, String text, Transform t) {
-  DEBUG_COUNTER_BEGIN();
+  DEBUG_FUNCTION_BEGIN();
   
   render_save(group);
   render_transform(group, t);
   render_scale(group, v3_invert(V3(PIXELS_PER_METER, PIXELS_PER_METER, 1)));
-  render_translate(group, text_pixel_align);
   
   for (u32 char_index = 0; char_index < text.count; char_index++) {
     char ch = text.data[char_index];
@@ -148,7 +144,7 @@ void push_text(Render_Group *group, Font *font, String text, Transform t) {
   
   render_restore(group);
   
-  DEBUG_COUNTER_END();
+  DEBUG_FUNCTION_END();
 }
 
 
@@ -229,28 +225,36 @@ void quad_renderer_destroy(Quad_Renderer *renderer) {
 }
 
 void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp, mat4x4 model_mat, Quad_Instance *instances, u32 instance_count) {
-  DEBUG_COUNTER_BEGIN();
+  DEBUG_FUNCTION_BEGIN();
   
+  DEBUG_SECTION_BEGIN(_buffer_data);
   gl.BindBuffer(GL_ARRAY_BUFFER, renderer->instance_vbo);
   gl.BufferData(GL_ARRAY_BUFFER, instance_count*sizeof(Quad_Instance),
                 instances, GL_DYNAMIC_DRAW);
+  DEBUG_SECTION_END(_buffer_data);
+  
+  
+  DEBUG_SECTION_BEGIN(_set_texture);
+  gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bmp->width, bmp->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, bmp->data);
+  DEBUG_SECTION_END(_set_texture);
+  
   
   gl.UseProgram(renderer->shader);
   gl_set_uniform_mat4x4(gl, renderer->shader, "u_view", &model_mat, 1);
   
-  gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bmp->width, bmp->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, bmp->data);
-  
+  DEBUG_SECTION_BEGIN(_draw_call);
   gl.BindVertexArray(renderer->vao);
   gl.DrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, instance_count);
+  DEBUG_SECTION_END(_draw_call);
   
-  DEBUG_COUNTER_END();
+  DEBUG_FUNCTION_END();
 }
 
 
 
 
 void render_group_init(Arena *arena, State *state, Render_Group *group, i32 item_capacity, v2 screen_size) {
-  DEBUG_COUNTER_BEGIN();
+  DEBUG_FUNCTION_BEGIN();
   
   group->items = arena_push_array(arena, Render_Item, item_capacity);
   group->item_count = 0;
@@ -261,11 +265,11 @@ void render_group_init(Arena *arena, State *state, Render_Group *group, i32 item
   group->state_stack_count = 0;
   group->debug_atlas = &state->debug_atlas;
   
-  DEBUG_COUNTER_END();
+  DEBUG_FUNCTION_END();
 }
 
 void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *renderer) {
-  DEBUG_COUNTER_BEGIN();
+  DEBUG_FUNCTION_BEGIN();
   
   assert(group->state_stack_count == 0);
   
@@ -335,5 +339,5 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
     quad_renderer_draw(renderer, &atlas->bmp, view_matrix, instances, sb_count(instances));
   }
   
-  DEBUG_COUNTER_END();
+  DEBUG_FUNCTION_END();
 }

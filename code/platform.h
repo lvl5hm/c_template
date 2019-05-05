@@ -9,13 +9,6 @@
 #define complete_past_reads_before_future_reads() _ReadBarrier()
 
 
-u32 get_thread_id() {
-  byte *thread_local_storage = (byte *)__readgsqword(0x30);
-  u32 result = *(u32 *)(thread_local_storage + 0x48);
-  
-  return result;
-}
-
 
 typedef struct {
   i16 *samples;
@@ -58,6 +51,7 @@ typedef struct {
 
 typedef struct {
   b32 is_reloaded;
+  b32 window_resized;
   
   byte *perm;
   u64 perm_size;

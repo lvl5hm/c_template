@@ -61,8 +61,12 @@ void *__grow(void **arr_ptr, u64 item_size, b32 is_growable) {
                            new_capacity*item_size + header_size) + header_size;
   copy_memory_slow(result, arr, header->capacity*item_size);
   
-  sb_count(result) = header->count;
-  sb_capacity(result) = new_capacity;
+  sb_Header *new_header = __get_header(result);
+  new_header->arena = header->arena;
+  new_header->count = header->count;
+  new_header->capacity = new_capacity;
+  new_header->is_growable = header->is_growable;
+  
   *arr_ptr = result;
   
 #ifdef LVL5_DEBUG
