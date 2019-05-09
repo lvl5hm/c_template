@@ -113,10 +113,6 @@ void push_text(Render_Group *group, Font *font, String text, Transform t) {
   
   for (u32 char_index = 0; char_index < text.count; char_index++) {
     char ch = text.data[char_index];
-    if (ch == ' ') {
-      render_translate(group, V3(0.14f, 0, 0));
-      continue;
-    }
     
     assert(ch >= font->first_codepoint_index && 
            ch < font->first_codepoint_index + font->codepoint_count);
