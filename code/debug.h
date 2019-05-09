@@ -33,7 +33,7 @@ typedef struct {
   u64 duration;
   i32 first_child_index;
   i32 one_past_last_child_index;
-  i32 parent_index; // -1 for no parent
+  i32 parent_index; // 0 is for no parent
   i32 depth;
   u64 self_duration;
 } Debug_View_Node;
@@ -41,11 +41,12 @@ typedef struct {
 typedef struct {
   Arena arena;
   i32 selected_frame_index; // -1 == no frame selected
-  Debug_View_Node *nodes;
+  Debug_View_Node *nodes; // 0th element is reserved
   i32 node_count;
   
   u64 node_memory;
 } Debug_GUI;
+
 
 typedef struct {
   Debug_Frame frames[60];
