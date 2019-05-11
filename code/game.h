@@ -80,8 +80,6 @@ typedef struct {
   Arena scratch;
   Arena temp;
   
-  Arena debug_arena;
-  
   Entity entities[40000];
   i32 entity_count;
   
@@ -92,7 +90,6 @@ typedef struct {
   
   
   Font font;
-  
   Texture_Atlas debug_atlas;
   
   Sprite spr_robot_torso;

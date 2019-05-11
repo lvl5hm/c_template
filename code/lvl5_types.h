@@ -15,6 +15,7 @@ typedef double f64;
 
 typedef i32 b32;
 typedef u8 byte;
+typedef i8 bool;
 
 #define false 0
 #define true 1

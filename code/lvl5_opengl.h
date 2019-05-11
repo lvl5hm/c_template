@@ -93,9 +93,9 @@ typedef struct {
 gl_Parse_Result gl_parse_glsl(String src)
 {
   String vertex_search_string = const_string("#shader vertex");
-  i32 vertex_index = find_index(src, vertex_search_string);
+  i32 vertex_index = find_index(src, vertex_search_string, 0);
   String fragment_search_string = const_string("#shader fragment");
-  i32 fragment_index = find_index(src, fragment_search_string);
+  i32 fragment_index = find_index(src, fragment_search_string, 0);
   
   gl_Parse_Result result;
   result.vertex = make_string(src.data + vertex_index +

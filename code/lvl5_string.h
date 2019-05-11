@@ -1,6 +1,7 @@
 #ifndef LVL5_STRING
 #define LVL5_STRING_VERSION 0
 
+#include "lvl5_math.h"
 #include "lvl5_types.h"
 #include "lvl5_alloc.h"
 #include "stdarg.h"
@@ -45,8 +46,8 @@ i32 find_last_index(String str, String substr) {
   return -1;
 }
 
-i32 find_index(String str, String substr) {
-  for (u32 i = 0; i < str.count - substr.count; i++)
+i32 find_index(String str, String substr, i32 start_index) {
+  for (u32 i = start_index; i < str.count - substr.count; i++)
   {
     u32 srcIndex = i;
     u32 testIndex = 0;
@@ -61,6 +62,17 @@ i32 find_index(String str, String substr) {
     }
   }
   return -1;
+}
+
+b32 starts_with(String str, String substr) {
+  b32 result = true;
+  for (u32 i = 0; i < substr.count; i++) {
+    if (str.data[i] != substr.data[i]) {
+      result = false;
+      break;
+    }
+  }
+  return result;
 }
 
 String substring(String s, u32 begin, u32 end) {
@@ -108,6 +120,28 @@ b32 c_string_compare(char *a, char *b) {
   }
   if (!*b) return true;
   return false;
+}
+
+b32 string_compare(String a, String b) {
+  if (a.count != b.count) {
+    return false;
+  }
+  for (u32 i = 0; i < a.count; i++) {
+    if (a.data[i] != b.data[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+i32 string_to_i32(String str) {
+  i32 result = 0;
+  for (u32 i = 0; i < str.count; i++) {
+    i32 power = str.count - i - 1;
+    i32 a = (i32)(str.data[i] - '0');
+    result += a*pow_i32(10, power);
+  }
+  return result;
 }
 
 String i32_to_string(Arena *arena, i32 num) {

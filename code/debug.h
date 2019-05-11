@@ -39,19 +39,36 @@ typedef struct {
 } Debug_View_Node;
 
 typedef struct {
+  char *input_data;
+  i32 input_count;
+  i32 input_capacity;
+  i32 cursor;
+} Debug_Terminal;
+
+typedef struct {
   Arena arena;
+  Font font;
   i32 selected_frame_index; // -1 == no frame selected
   Debug_View_Node *nodes; // 0th element is reserved
   i32 node_count;
   
   u64 node_memory;
+  
+  Debug_Terminal terminal;
 } Debug_GUI;
 
+typedef struct {
+  String name;
+  i32 value;
+} Debug_Var;
 
 typedef struct {
+  Arena arena;
   Debug_Frame frames[60];
   i32 frame_index;
   b32 pause;
+  
+  Debug_Var vars[32];
   
   Debug_GUI gui;
 } Debug_State;

@@ -25,6 +25,16 @@
 #define I64_MIN -I64_MAX-1
 
 
+i32 pow_i32(i32 a, i32 n) {
+  assert(n >= 0);
+  i32 result = 1;
+  while (n) {
+    result *= a;
+    n--;
+  }
+  return result;
+}
+
 f32 sin_f32(f32 a) {
   f32 result = sinf(a);
   return result;

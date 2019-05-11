@@ -22,9 +22,10 @@ typedef struct {
 } Sound;
 
 typedef struct {
-  b32 is_down;
-  b32 went_down;
-  b32 went_up;
+  bool is_down;
+  bool went_down;
+  bool went_up;
+  bool pressed;
 } Button;
 
 typedef struct {
@@ -46,6 +47,10 @@ typedef struct {
       Button start;
     };
   };
+  
+  Button keys[200];
+  
+  char char_code;
 } game_Input;
 
 
@@ -103,7 +108,7 @@ typedef PLATFORM_READ_FILE(Platform_Read_File);
 #define PLATFORM_CLOSE_FILE(name) void name(File_Handle file)
 typedef PLATFORM_CLOSE_FILE(Platform_Close_File);
 
-#define GAME_UPDATE(name) void name(v2 screen_size, game_Memory memory, game_Input input, f32 dt, Platform platform)
+#define GAME_UPDATE(name) void name(v2 screen_size, game_Memory memory, game_Input input, f32 dt, Platform _platform)
 
 #define WORKER_FN(name) void name(void *data)
 typedef WORKER_FN(Worker_Fn);

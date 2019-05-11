@@ -484,12 +484,15 @@ f64 win32_get_time() {
 
 
 void win32_handle_button(Button *button, b32 is_down) {
+  if (is_down) {
+    button->pressed = true;
+  }
   if (button->is_down && !is_down) {
     button->went_up = true;
   } else if (!button->is_down && is_down) {
     button->went_down = true;
   }
-  button->is_down = is_down;
+  button->is_down = (bool)is_down;
 }
 
 
@@ -865,11 +868,24 @@ int CALLBACK WinMain(HINSTANCE instance,
       Button *b = game_input.buttons + button_index;
       b->went_down = false;
       b->went_up = false;
+      b->pressed = false;
     }
+    
+    for (u32 button_index = 0; 
+         button_index < array_count(game_input.keys);
+         button_index++) {
+      Button *b = game_input.keys + button_index;
+      b->went_down = false;
+      b->went_up = false;
+      b->pressed = false;
+    }
+    
     game_input.mouse.left.went_up = false;
     game_input.mouse.left.went_down = false;
     game_input.mouse.right.went_up = false;
     game_input.mouse.right.went_down = false;
+    
+    game_input.char_code = 0;
     
     
     RECT client_rect;
@@ -882,6 +898,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     ScreenToClient(window, &mouse_p);
     game_input.mouse.p.x = (f32)mouse_p.x;
     game_input.mouse.p.y = (f32)(client_rect.bottom - mouse_p.y);
+    
+    
     
     while (PeekMessage(&message, window, 0, 0, PM_REMOVE)) 
     {
@@ -907,11 +925,29 @@ int CALLBACK WinMain(HINSTANCE instance,
         {
 #define KEY_WAS_DOWN_BIT 1 << 30
 #define KEY_IS_UP_BIT 1 << 31
+#define SCAN_CODE_MASK 0x0000FF00
+          
           b32 key_was_down = (message.lParam & KEY_WAS_DOWN_BIT);
           b32 key_is_down = !(message.lParam & KEY_IS_UP_BIT);
           b32 key_went_down = !key_was_down && key_is_down;
           WPARAM key_code = message.wParam;
           
+          if (key_went_down) {
+            u32 scan_code = message.lParam & SCAN_CODE_MASK;
+            byte keyboard_state[256];
+            GetKeyboardState(keyboard_state);
+            u16 char_code_u16[2];
+            i32 got_keycode = ToAscii((UINT)key_code, scan_code,
+                                      keyboard_state, char_code_u16, 0);
+            
+            if (got_keycode > 0) {
+              game_input.char_code = (char)char_code_u16[0];
+            }
+          }
+          
+          if (key_code < array_count(game_input.keys)) {
+            win32_handle_button(&game_input.keys[key_code], key_is_down);
+          }
           
           switch (key_code)
           {
@@ -988,10 +1024,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     last_time = current_time;
     last_cycles = current_cycles;
-    
-    char buffer[256];
-    sprintf_s(buffer, 256, "%.4f ms  %lld cycles\n", time_used*1000.0f, cycles_used);
-    OutputDebugStringA(buffer);
     
     arena_set_mark(&state.scratch, 0);
     SwapBuffers(device_context);

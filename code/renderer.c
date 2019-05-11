@@ -114,8 +114,10 @@ void push_text(Render_Group *group, Font *font, String text, Transform t) {
   for (u32 char_index = 0; char_index < text.count; char_index++) {
     char ch = text.data[char_index];
     
-    assert(ch >= font->first_codepoint_index && 
+#if 1
+   assert(ch >= font->first_codepoint_index && 
            ch < font->first_codepoint_index + font->codepoint_count);
+#endif
     
     i32 font_index = ch - font->first_codepoint_index;
     Codepoint_Metrics metrics = font->metrics[font_index];
@@ -220,7 +222,8 @@ void quad_renderer_destroy(Quad_Renderer *renderer) {
   zero_memory_slow(renderer, sizeof(Quad_Renderer));
 }
 
-void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp, mat4x4 model_mat, Quad_Instance *instances, u32 instance_count) {
+void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp,
+                        mat4x4 model_mat, Quad_Instance *instances, u32 instance_count) {
   DEBUG_FUNCTION_BEGIN();
   
   DEBUG_SECTION_BEGIN(_buffer_data);
@@ -249,7 +252,8 @@ void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp, mat4x4 model_mat, 
 
 
 
-void render_group_init(Arena *arena, State *state, Render_Group *group, i32 item_capacity, v2 screen_size) {
+void render_group_init(Arena *arena, State *state, Render_Group *group,
+                       i32 item_capacity, v2 screen_size) {
   DEBUG_FUNCTION_BEGIN();
   
   group->items = arena_push_array(arena, Render_Item, item_capacity);
@@ -269,8 +273,10 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
   
   assert(group->state_stack_count == 0);
   
+  DEBUG_SECTION_BEGIN(_push_instances);
   if (group->item_count != 0) {
-    Quad_Instance *instances = sb_init(arena, Quad_Instance, group->item_count, false);
+    Quad_Instance *instances = arena_push_array(arena, Quad_Instance, group->item_count);
+    i32 instance_count = 0;
     
     Texture_Atlas *atlas = 0;
     
@@ -280,6 +286,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
         case Render_Type_Sprite: {
           Sprite sprite = item->Sprite.sprite;
           
+          // TODO(lvl5): remove duplicate code
           if (atlas && atlas != sprite.atlas) {
             v2 screen_size_v2 = group->screen_size;
             v2 screen_size_in_meters = v2_div_s(screen_size_v2, PIXELS_PER_METER);
@@ -290,11 +297,13 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
             view_transform.angle = 0;
             view_transform.scale = v2_to_v3(gl_units_per_meter, 1.0f);
             
-            mat4x4 view_matrix = transform_apply(mat4x4_identity(), view_transform);
+            mat4x4 view_matrix = transform_apply(mat4x4_identity(), 
+                                                 view_transform);
             
-            quad_renderer_draw(renderer, &atlas->bmp, view_matrix, instances, sb_count(instances));
+            quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
+                               instances, instance_count);
             
-            sb_count(instances) = 0;
+            instance_count = 0;
           }
           
           
@@ -307,8 +316,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           inst.tex_scale = rect2_get_size(tex_rect);
           inst.color = item->state.color;
           
-          sb_push(instances, inst);
-          
+          instances[instance_count++] = inst;
           
           atlas = sprite.atlas;
         } break;
@@ -320,6 +328,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
         default: assert(false);
       }
     }
+    DEBUG_SECTION_END(_push_instances);
     
     v2 screen_size_v2 = group->screen_size;
     v2 screen_size_in_meters = v2_div_s(screen_size_v2, PIXELS_PER_METER);
@@ -332,7 +341,8 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
     
     mat4x4 view_matrix = transform_apply(mat4x4_identity(), view_transform);
     
-    quad_renderer_draw(renderer, &atlas->bmp, view_matrix, instances, sb_count(instances));
+    quad_renderer_draw(renderer, &atlas->bmp, view_matrix, 
+                       instances, instance_count);
   }
   
   DEBUG_FUNCTION_END();
