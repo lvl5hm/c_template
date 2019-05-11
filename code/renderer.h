@@ -2,13 +2,8 @@
 
 #include "platform.h"
 #include "lvl5_math.h"
+#include "font.h"
 
-
-typedef struct {
-  i32 width;
-  i32 height;
-  byte *data;
-} Bitmap;
 
 
 typedef struct {
@@ -37,19 +32,6 @@ Transform transform_default() {
   return t;
 }
 
-
-
-
-
-
-
-
-typedef struct {
-  Bitmap bmp;
-  rect2 *rects;
-  i32 sprite_count;
-} Texture_Atlas;
-
 typedef struct {
   Texture_Atlas *atlas;
   i32 index;
@@ -75,6 +57,7 @@ typedef struct {
 typedef struct {
   mat4x4 matrix;
   v4 color;
+  Font *font;
 } Render_State;
 
 typedef struct {

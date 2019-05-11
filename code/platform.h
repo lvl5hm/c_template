@@ -143,6 +143,7 @@ typedef struct {
 gl_Funcs gl;
 typedef GAME_UPDATE(Game_Update);
 
+Platform platform;
 
 #define PLATFORM_H
 #endif

@@ -370,6 +370,7 @@ extern GAME_UPDATE(game_update) {
   
   DEBUG_FUNCTION_BEGIN();
   
+  DEBUG_SECTION_BEGIN(_init);
   State *state = (State *)memory.perm;
   Arena *arena = &state->arena;
   
@@ -435,6 +436,7 @@ extern GAME_UPDATE(game_update) {
     gl.Viewport(0, 0, (i32)screen_size.x,(i32) screen_size.y);
   }
   
+  DEBUG_SECTION_END(_init);
   
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group _group;
@@ -454,7 +456,8 @@ extern GAME_UPDATE(game_update) {
         render_save(group);
         render_transform(group, entity->t);
         
-        push_rect(group, rect_1m, V4(1, 0, 0, 1));
+        render_color(group, V4(1, 0, 0, 1));
+        push_rect(group, rect_1m);
         
         
         render_restore(group);
@@ -532,12 +535,14 @@ extern GAME_UPDATE(game_update) {
           }
         }
         
+#if 0
         if (collision) {
           push_rect(group, rect_1m, V4(0, 1, 1, 1));
         } else {
           push_rect(group, rect_1m, V4(0, 1, 0, 1));
         }
-        //draw_robot(state, &group);
+#endif
+        draw_robot(state, group);
         
         render_restore(group);
       } break;
@@ -546,17 +551,16 @@ extern GAME_UPDATE(game_update) {
   DEBUG_SECTION_END(_entities);
   
   
-  gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+  DEBUG_SECTION_BEGIN(_glClear);
+  gl.ClearColor(0.2f, 0.2f, 0.2f, 1.0f);
   gl.Clear(GL_COLOR_BUFFER_BIT);
+  DEBUG_SECTION_END(_glClear);
   render_group_output(&state->temp, group, &state->renderer);
-  
-  
-  arena_set_mark(&state->temp, render_memory);
   
   DEBUG_FUNCTION_END();
   debug_end_frame();
   
-  
+  arena_set_mark(&state->temp, render_memory);
   debug_draw_gui(state, screen_size, &input);
   
   
@@ -565,5 +569,6 @@ extern GAME_UPDATE(game_update) {
   
   arena_check_no_marks(&state->temp);
   arena_check_no_marks(&state->arena);
+  
   state->frame_count++;
 }

@@ -4,7 +4,7 @@
 #include "lvl5_math.h"
 #include "renderer.h"
 #include "lvl5_random.h"
-
+#include "font.h"
 
 typedef enum {
   Entity_Type_NONE,
@@ -60,19 +60,6 @@ typedef struct {
   f32 *weights;
   f32 *positions;
 } Animation_Instance;
-
-typedef struct {
-  v2 origin;
-  f32 advance;
-  f32 *kerning;
-} Codepoint_Metrics;
-
-typedef struct {
-  Texture_Atlas atlas;
-  char first_codepoint_index;
-  Codepoint_Metrics *metrics;
-  i32 codepoint_count;
-} Font;
 
 typedef struct {
   b32 is_initialized;

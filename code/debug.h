@@ -36,6 +36,8 @@ typedef struct {
   i32 parent_index; // 0 is for no parent
   i32 depth;
   u64 self_duration;
+  i16 id;
+  i32 count;
 } Debug_View_Node;
 
 typedef struct {
@@ -43,6 +45,7 @@ typedef struct {
   i32 input_count;
   i32 input_capacity;
   i32 cursor;
+  b32 is_active;
 } Debug_Terminal;
 
 typedef struct {
@@ -53,7 +56,6 @@ typedef struct {
   i32 node_count;
   
   u64 node_memory;
-  
   Debug_Terminal terminal;
 } Debug_GUI;
 

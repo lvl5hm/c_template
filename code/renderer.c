@@ -1,7 +1,7 @@
 #include "renderer.h"
 #include "debug.h"
 #define PIXELS_PER_METER 96
-
+#include "font.c"
 
 mat4x4 transform_apply(mat4x4 matrix, Transform t) {
   DEBUG_FUNCTION_BEGIN();
@@ -53,6 +53,9 @@ void render_color(Render_Group *group, v4 color) {
   group->state.color = color;
 }
 
+void render_font(Render_Group *group, Font *font) {
+  group->state.font = font;
+}
 
 
 rect2 sprite_get_rect(Sprite spr) {
@@ -87,7 +90,7 @@ void push_sprite(Render_Group *group, Sprite sprite, Transform t) {
   DEBUG_FUNCTION_END();
 }
 
-void push_rect(Render_Group *group, rect2 rect, v4 color) {
+void push_rect(Render_Group *group, rect2 rect) {
   Transform t;
   t.angle = 0;
   t.p = v2_to_v3(rect2_get_center(rect), 0);
@@ -99,34 +102,26 @@ void push_rect(Render_Group *group, rect2 rect, v4 color) {
   spr.origin = V2(0.5f, 0.5f);
   
   render_save(group);
-  render_color(group, color);
   push_sprite(group, spr, t);
   render_restore(group);
 }
 
-void push_text(Render_Group *group, Font *font, String text, Transform t) {
+void push_text(Render_Group *group, String text) {
   DEBUG_FUNCTION_BEGIN();
   
   render_save(group);
-  render_transform(group, t);
   render_scale(group, v3_invert(V3(PIXELS_PER_METER, PIXELS_PER_METER, 1)));
   
   for (u32 char_index = 0; char_index < text.count; char_index++) {
     char ch = text.data[char_index];
     
-#if 1
-   assert(ch >= font->first_codepoint_index && 
+#if 0
+    assert(ch >= font->first_codepoint_index && 
            ch < font->first_codepoint_index + font->codepoint_count);
 #endif
     
-    i32 font_index = ch - font->first_codepoint_index;
-    Codepoint_Metrics metrics = font->metrics[font_index];
-    
-    Sprite spr;
-    spr.index = font_index;
-    spr.origin = metrics.origin;
-    spr.atlas = &font->atlas;
-    assert(spr.atlas->rects);
+    Codepoint_Metrics metrics = font_get_metrics(group->state.font, ch);
+    Sprite spr = font_get_sprite(group->state.font, ch);
     
     rect2 rect = sprite_get_rect(spr);
     v2 size_pixels = v2_hadamard(rect2_get_size(rect), 
@@ -205,7 +200,8 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state) {
     (Quad_Vertex){V3(1, 0, 0)},
   };
   gl.BindBuffer(GL_ARRAY_BUFFER, renderer->vertex_vbo);
-  gl.BufferData(GL_ARRAY_BUFFER, array_count(vertices)*sizeof(Quad_Vertex), vertices, GL_STATIC_DRAW);
+  gl.BufferData(GL_ARRAY_BUFFER, array_count(vertices)*sizeof(Quad_Vertex), 
+                vertices, GL_STATIC_DRAW);
   
   
   gl.GenTextures(1, &renderer->texture);

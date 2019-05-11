@@ -24,6 +24,21 @@
 #define I32_MIN -I32_MAX-1
 #define I64_MIN -I64_MAX-1
 
+i32 max_i32(i32 a, i32 max) {
+  i32 result = a > max ? a : max;
+  return result;
+}
+
+i32 min_i32(i32 a, i32 min) {
+  i32 result = a < min ? a : min;
+  return result;
+}
+
+
+i32 clip_i32(i32 a, i32 min, i32 max) {
+  i32 result = max_i32(min_i32(a, max), min);
+  return result;
+}
 
 i32 pow_i32(i32 a, i32 n) {
   assert(n >= 0);
