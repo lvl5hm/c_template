@@ -22,14 +22,13 @@ typedef enum {
 } Key_Code;
 
 
-v2 get_mouse_p_meters(game_Input *input, v2 screen_size) {
+v2 get_mouse_p_meters(Input *input, v2 screen_size) {
   v2 screen_size_meters = v2_div_s(screen_size, PIXELS_PER_METER);
   v2 half_screen_size_meters = v2_div_s(screen_size_meters, 2);
   v2 mouse_p_meters = v2_sub(v2_div_s(input->mouse.p, PIXELS_PER_METER),
                              half_screen_size_meters);
   return mouse_p_meters;
 }
-
 
 b32 point_in_rect(v2 point, rect2 rect) {
   b32 result = point.x > rect.min.x &&
@@ -43,20 +42,20 @@ typedef enum {
   Debug_Var_Name_PERF,
 } Debug_Var_Name;
 
-void debug_init(Arena *temp, Arena *perm) {
-  arena_init_subarena(temp, &debug_state.arena, megabytes(32));
-  arena_init_subarena(&debug_state.arena, &debug_state.gui.arena, kilobytes(32));
+void debug_init(Arena *temp, byte *debug_memory) {
+  arena_init(&debug_state->arena, debug_memory, megabytes(32));
+  arena_init_subarena(&debug_state->arena, &debug_state->gui.arena, kilobytes(32));
   
-  Debug_GUI *gui = &debug_state.gui;
-  gui->font = load_ttf(temp, perm, const_string("Inconsolata-Regular.ttf"));
+  Debug_GUI *gui = &debug_state->gui;
+  gui->font = load_ttf(temp, &debug_state->arena, const_string("Inconsolata-Regular.ttf"));
   
   // NOTE(lvl5): variables
-  debug_state.vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 0};
+  debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 0};
   
   // NOTE(lvl5): terminal
   Debug_Terminal *term = &gui->terminal;
   term->input_capacity = 512;
-  term->input_data = arena_push_array(&debug_state.arena, char, 
+  term->input_data = arena_push_array(&debug_state->arena, char, 
                                       term->input_capacity);
   term->input_data[0] = '>';
   term->input_count = 1;
@@ -65,7 +64,7 @@ void debug_init(Arena *temp, Arena *perm) {
 
 #define DEBUG_BG_COLOR V4(0, 0, 0, 0.4f)
 
-void debug_draw_terminal(Debug_Terminal *term, Render_Group *group, game_Input *input,
+void debug_draw_terminal(Debug_Terminal *term, Render_Group *group, Input *input,
                          v2 screen_meters) {
   DEBUG_FUNCTION_BEGIN();
   
@@ -109,8 +108,8 @@ void debug_draw_terminal(Debug_Terminal *term, Render_Group *group, game_Input *
       String var_name = substring(str, 4, space_index);
       String value_str = substring(str, space_index+1, str.count-1);
       
-      for (i32 var_index = 0; var_index < array_count(debug_state.vars); var_index++) {
-        Debug_Var *var = debug_state.vars + var_index;
+      for (i32 var_index = 0; var_index < array_count(debug_state->vars); var_index++) {
+        Debug_Var *var = debug_state->vars + var_index;
         if (string_compare(var_name, var->name)) {
           i32 value = string_to_i32(value_str);
           var->value = value;
@@ -140,24 +139,22 @@ void debug_draw_terminal(Debug_Terminal *term, Render_Group *group, game_Input *
   DEBUG_FUNCTION_END();
 }
 
-void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
+void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   DEBUG_FUNCTION_BEGIN();
   
-  Debug_GUI *gui = &debug_state.gui;
+  Debug_GUI *gui = &debug_state->gui;
   
-  u64 debug_render_memory = arena_get_mark(&debug_state.arena);
+  u64 debug_render_memory = arena_get_mark(&debug_state->arena);
   Render_Group _debug_render_group;
   Render_Group *group = &_debug_render_group;
   
-  render_group_init(&debug_state.arena, state, group, 10000, screen_size); 
-  
+  render_group_init(&debug_state->arena, state, group, 10000, screen_size); 
   render_font(group, &gui->font);
   
   v2 screen_meters = v2_div_s(screen_size, PIXELS_PER_METER);
-  
   debug_draw_terminal(&gui->terminal, group, input, screen_meters);
   
-  if (debug_state.vars[Debug_Var_Name_PERF].value != 0) {
+  if (debug_state->vars[Debug_Var_Name_PERF].value != 0) {
     f32 total_width = 3.0f;
     f32 total_heigt = 1.0f;
     render_translate(group, V3(-screen_meters.x*0.5f, 
@@ -166,23 +163,42 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
     render_color(group, DEBUG_BG_COLOR);
     push_rect(group, rect2_min_size(V2(0, 0), V2(total_width, total_heigt)));
     
-    f32 rect_width = total_width/array_count(debug_state.frames);
-    
 #define MAX_CYCLES 40891803
+#if 1
+    {
+      Debug_Frame *frame = debug_state->frames + debug_state->frame_index - 1;
+      u64 begin_cycles = frame->events[0].cycles;
+      u64 end_cycles = frame->events[frame->event_count-1].cycles;
+      u64 duration = end_cycles - begin_cycles;
+      
+      char buffer[256];
+      render_save(group);
+      render_color(group, V4(1, 1, 1, 1));
+      render_translate(group, V3(total_width + 0.1f, 0.9f, 0));
+      sprintf_s(buffer, array_count(buffer), "%.2f ms", 
+                (f32)(end_cycles - begin_cycles)/(f32)MAX_CYCLES*16.6f);
+      
+      String str = from_c_string(buffer);
+      push_text(group, str);
+      render_restore(group);
+    }
+#endif
+    
+    f32 rect_width = total_width/array_count(debug_state->frames);
     
     render_save(group);
     b32 any_frame_selected = false;
     
-    for (i32 i = 0; i < array_count(debug_state.frames); i++) {
-      i32 frame_index = (debug_state.frame_index + i) % array_count(debug_state.frames);
+    for (i32 i = 0; i < array_count(debug_state->frames); i++) {
+      i32 frame_index = (debug_state->frame_index + i) % array_count(debug_state->frames);
       
-      Debug_Frame *frame = debug_state.frames + frame_index;
-      if (frame->event_count && frame_index != debug_state.frame_index) {
+      Debug_Frame *frame = debug_state->frames + frame_index;
+      if (frame->event_count && frame_index != debug_state->frame_index) {
         u64 begin_cycles = frame->events[0].cycles;
         u64 end_cycles = frame->events[frame->event_count-1].cycles;
         u64 duration = end_cycles - begin_cycles;
         
-        f32 rect_height = (f32)duration/MAX_CYCLES*10;
+        f32 rect_height = (f32)duration/MAX_CYCLES*3;
         
         rect2 rect = rect2_min_size(V2(0, 0), 
                                     V2(rect_width, rect_height));
@@ -193,7 +209,7 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
         v2 mouse_p_meters = get_mouse_p_meters(input, screen_size);
         if (point_in_rect(mouse_p_meters, mouse_rect)) {
           color = V4(1, 0, 0, 1);
-          debug_state.pause = true;
+          debug_state->pause = true;
           any_frame_selected = true;
           
           if (input->mouse.left.went_down) {
@@ -203,9 +219,10 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
             gui->selected_frame_index = frame_index;
             gui->node_memory = arena_get_mark(&gui->arena);
             
-            Debug_Frame *frame = debug_state.frames + gui->selected_frame_index;
+            Debug_Frame *frame = debug_state->frames + gui->selected_frame_index;
+            i32 node_capacity = frame->timer_count+1;
             gui->nodes = arena_push_array(&gui->arena, 
-                                          Debug_View_Node, frame->timer_count+1);
+                                          Debug_View_Node, node_capacity);
             i32 node_index = 0;
             gui->node_count = 1;
             i32 depth = 0;
@@ -220,21 +237,23 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
               
               if (event->type == Debug_Type_BEGIN_TIMER) {
                 i32 new_index =  gui->node_count++;
+                assert(new_index < node_capacity);
                 Debug_View_Node *node = gui->nodes + new_index;
                 node->type = Debug_View_Type_NONE;
-                node->event_index = event_index;
+                node->name = alloc_string(&gui->arena, event->name,
+                                          c_string_length(event->name));
                 node->first_child_index = new_index + 1;
                 node->parent_index = node_index;
                 node->depth = depth++;
                 node->self_duration = 0;
                 node->id = event->id;
+                node->duration = event->cycles;
                 
                 node_index = new_index;
               } else if (event->type == Debug_Type_END_TIMER) {
                 Debug_View_Node *node = gui->nodes + node_index;
                 node->one_past_last_child_index = gui->node_count;
-                Debug_Event *begin = frame->events + node->event_index;
-                node->duration = event->cycles - begin->cycles;
+                node->duration = event->cycles - node->duration;
                 
                 Debug_View_Node *parent = gui->nodes + node->parent_index;
                 parent->self_duration -= node->duration;
@@ -253,18 +272,10 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
       }
     }
     render_restore(group);
-#if 0
-    char buffer[256];
-    sprintf_s(buffer, array_count(buffer), 
-              "", 
-              event->name, self_percent, node->self_duration,
-              node->count, node->self_duration/node->count);
-#endif
     
-    
-    if (debug_state.gui.selected_frame_index >= 0) {
-      Debug_Frame *frame = debug_state.frames +
-        debug_state.gui.selected_frame_index;
+    if (debug_state->gui.selected_frame_index >= 0) {
+      Debug_Frame *frame = debug_state->frames +
+        debug_state->gui.selected_frame_index;
       
       
       render_save(group);
@@ -282,11 +293,10 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
         f32 percent = (f32)node->duration/(f32)parent_duration*100;
         f32 self_percent = (f32)node->self_duration/(f32)parent_duration*100;
         
-        Debug_Event *event = frame->events + node->event_index;
-        
+        char *name = to_c_string(&debug_state->arena, node->name);
         char buffer[256];
         sprintf_s(buffer, array_count(buffer), "%s: %.2f%% (self %.2f%%)  (%lld)", 
-                  event->name, percent, self_percent, node->duration);
+                  name, percent, self_percent, node->duration);
         
         String str = from_c_string(buffer);
         
@@ -303,7 +313,8 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
         push_rect(group, on_screen_rect);
         
         v2 mouse_p_meters = get_mouse_p_meters(input, group->screen_size);
-        i32 child_indices_count = node->one_past_last_child_index - node->first_child_index;
+        i32 child_indices_count = node->one_past_last_child_index - 
+          node->first_child_index;
         
         render_color(group, V4(1, 1, 1, 1));
         
@@ -332,7 +343,8 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
         render_translate(group, V3(0, -0.2f, 0));
         
         if (node->type == Debug_View_Type_FLAT) {
-          Debug_View_Node *flat_children = sb_init(&debug_state.arena,
+          // NOTE(lvl5): merge all descendant by event id
+          Debug_View_Node *flat_children = sb_init(&debug_state->arena,
                                                    Debug_View_Node, child_indices_count, false);
           
           for (i32 child_index = node->first_child_index;
@@ -352,7 +364,7 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
             if (!rec) {
               Debug_View_Node new_rec = {0};
               new_rec.id = child->id;
-              new_rec.event_index = child->event_index;
+              new_rec.name = child->name;
               sb_push(flat_children, new_rec);
               rec = flat_children + sb_count(flat_children) - 1;
             }
@@ -362,6 +374,7 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
           }
           
           {
+            // NOTE(lvl5): sort the flat children by self_duration
             u32 i = 1;
             while (i < sb_count(flat_children)) {
               u32 j = i;
@@ -380,6 +393,7 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
           Debug_View_Node *parent = node;
           render_translate(group, V3(0.1f*(node->depth+1), 0, 0));
           
+          // NOTE(lvl5): draw flat children
           for (u32 flat_index = 0;
                flat_index < sb_count(flat_children);
                flat_index++) {
@@ -390,12 +404,11 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
             f32 percent = (f32)node->duration/(f32)parent_duration*100;
             f32 self_percent = (f32)node->self_duration/(f32)parent_duration*100;
             
-            Debug_Event *event = frame->events + node->event_index;
-            
+            char *name = to_c_string(&debug_state->arena, node->name);
             char buffer[256];
             sprintf_s(buffer, array_count(buffer), 
                       "%s: %.2f%% (%lld) %d hits (%lld cy/h)", 
-                      event->name, self_percent, node->self_duration,
+                      name, self_percent, node->self_duration,
                       node->count, node->self_duration/node->count);
             
             String str = from_c_string(buffer);
@@ -411,7 +424,8 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
             render_color(group, DEBUG_BG_COLOR);
             push_rect(group, on_screen_rect);
             
-            i32 child_indices_count = node->one_past_last_child_index - node->first_child_index;
+            i32 child_indices_count = node->one_past_last_child_index -
+              node->first_child_index;
             
             render_color(group, V4(1, 1, 1, 1));
             
@@ -434,24 +448,20 @@ void debug_draw_gui(State *state, v2 screen_size, game_Input *input) {
     
 #if 1   
     if (!any_frame_selected) {
-      if (debug_state.gui.selected_frame_index >= 0) {
+      if (debug_state->gui.selected_frame_index >= 0) {
         if (input->mouse.left.went_down) {
-          debug_state.gui.selected_frame_index = -1;
+          debug_state->gui.selected_frame_index = -1;
         }
       } else {
-        debug_state.pause = false;
+        debug_state->pause = false;
       }
     }
 #endif
     
   }
   
-  render_group_output(&debug_state.arena, group, &state->renderer);
-  arena_set_mark(&debug_state.arena, debug_render_memory);
+  render_group_output(&debug_state->arena, group, &state->renderer);
+  arena_set_mark(&debug_state->arena, debug_render_memory);
   
   DEBUG_FUNCTION_END();
 }
-
-
-
-

@@ -366,31 +366,35 @@ b32 collide_box_box(rect2 a_rect, Transform a_t, rect2 b_rect, Transform b_t) {
 #define SCRATCH_SIZE kilobytes(32)
 
 extern GAME_UPDATE(game_update) {
+  State *state = (State *)memory.perm;
+  debug_state = (Debug_State *)memory.debug;
+  
   debug_begin_frame();
   
   DEBUG_FUNCTION_BEGIN();
-  
   DEBUG_SECTION_BEGIN(_init);
-  State *state = (State *)memory.perm;
+  
   Arena *arena = &state->arena;
   
-  gl = _platform.gl;
-  
-  if (!state->is_initialized) {
-    arena_init(&state->arena, memory.perm + sizeof(State), memory.perm_size - sizeof(State));
-  }
   
   if (memory.is_reloaded) {
+    // NOTE(lvl5): transient memory can be destroyed at this point
     platform = _platform;
+    gl = _platform.gl;
     
     arena_init(&state->scratch, memory.temp, SCRATCH_SIZE);
-    arena_init(&state->temp, memory.temp + SCRATCH_SIZE, memory.temp_size - SCRATCH_SIZE);
-    // NOTE(lvl5): transient memory can be destroyed at this point
-    debug_init(&state->temp, &state->arena);
+    arena_init(&state->temp, memory.temp + SCRATCH_SIZE, 
+               memory.temp_size - SCRATCH_SIZE);
   }
   
   if (!state->is_initialized) {
-    debug_state.gui.selected_frame_index = -1;
+    arena_init(&state->arena, memory.perm + sizeof(State), 
+               memory.perm_size - sizeof(State));
+    debug_init(&state->temp, memory.debug + sizeof(Debug_State));
+  }
+  
+  if (!state->is_initialized) {
+    debug_state->gui.selected_frame_index = -1;
     
     state->frame_count = 0;
     state->rand = make_random_sequence(2312323342);
@@ -561,7 +565,7 @@ extern GAME_UPDATE(game_update) {
   debug_end_frame();
   
   arena_set_mark(&state->temp, render_memory);
-  debug_draw_gui(state, screen_size, &input);
+  debug_draw_gui(state, screen_size, &input, dt);
   
   
   

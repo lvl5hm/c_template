@@ -14,7 +14,7 @@ typedef struct {
   i16 *samples;
   u32 count;
   u32 overwrite_count;
-} game_Sound_Buffer;
+} Sound_Buffer;
 
 typedef struct {
   i16 *samples[2];
@@ -51,7 +51,7 @@ typedef struct {
   Button keys[200];
   
   char char_code;
-} game_Input;
+} Input;
 
 
 typedef struct {
@@ -63,7 +63,10 @@ typedef struct {
   
   byte *temp;
   u64 temp_size;
-} game_Memory;
+  
+  byte *debug;
+  u64 debug_size;
+} Memory;
 
 typedef struct {
   byte *data;
@@ -79,7 +82,7 @@ String buffer_to_string(Buffer b) {
 typedef PLATFORM_READ_ENTIRE_FILE(Platform_Read_Entire_File);
 
 
-#define PLATFORM_REQUEST_SOUND_BUFFER(name) game_Sound_Buffer *name()
+#define PLATFORM_REQUEST_SOUND_BUFFER(name) Sound_Buffer *name()
 typedef PLATFORM_REQUEST_SOUND_BUFFER(Platform_Request_Sound_Buffer);
 
 
@@ -108,8 +111,6 @@ typedef PLATFORM_READ_FILE(Platform_Read_File);
 #define PLATFORM_CLOSE_FILE(name) void name(File_Handle file)
 typedef PLATFORM_CLOSE_FILE(Platform_Close_File);
 
-#define GAME_UPDATE(name) void name(v2 screen_size, game_Memory memory, game_Input input, f32 dt, Platform _platform)
-
 #define WORKER_FN(name) void name(void *data)
 typedef WORKER_FN(Worker_Fn);
 
@@ -124,7 +125,11 @@ typedef struct _Work_Queue *Work_Queue;
 #define PLATFORM_ADD_WORK_QUEUE_ENTRY(name) void name(Work_Queue queue_ptr, Worker_Fn *fn, void *data)
 typedef PLATFORM_ADD_WORK_QUEUE_ENTRY(Platform_Add_Work_Queue_Entry);
 
+#define PLATFORM_GET_TIME(name) f64 name()
+typedef PLATFORM_GET_TIME(Platform_Get_Time);
+
 typedef struct {
+  Platform_Get_Time *get_time;
   Platform_Read_Entire_File *read_entire_file;
   Platform_Request_Sound_Buffer *request_sound_buffer;
   gl_Funcs gl;
@@ -141,9 +146,12 @@ typedef struct {
 
 
 gl_Funcs gl;
+Platform platform;
+
+#define GAME_UPDATE(name) void name(v2 screen_size, Memory memory, \
+Input input, f32 dt, Platform _platform)
 typedef GAME_UPDATE(Game_Update);
 
-Platform platform;
 
 #define PLATFORM_H
 #endif

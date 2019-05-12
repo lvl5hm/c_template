@@ -29,7 +29,7 @@ typedef enum {
 
 typedef struct {
   Debug_View_Type type;
-  u32 event_index;
+  String name;
   u64 duration;
   i32 first_child_index;
   i32 one_past_last_child_index;
@@ -76,7 +76,7 @@ typedef struct {
 } Debug_State;
 
 
-globalvar Debug_State debug_state = {0};
+globalvar Debug_State *debug_state = 0;
 
 #define DEBUG_FUNCTION_BEGIN() \
 u8 __debug_id = __COUNTER__; \
@@ -93,23 +93,23 @@ debug_log_event(__debug_id_##name, Debug_Type_BEGIN_TIMER, #name)
 debug_log_event(__debug_id_##name, Debug_Type_END_TIMER, #name)
 
 void debug_begin_frame() {
-  if (!debug_state.pause) {
-    Debug_Frame *frame = debug_state.frames + debug_state.frame_index;
+  if (!debug_state->pause) {
+    Debug_Frame *frame = debug_state->frames + debug_state->frame_index;
     frame->event_count = 0;
     frame->timer_count = 0;
   }
 }
 
 void debug_end_frame() {
-  if (!debug_state.pause) {
-    debug_state.frame_index = (debug_state.frame_index+1) % 
-      array_count(debug_state.frames);
+  if (!debug_state->pause) {
+    debug_state->frame_index = (debug_state->frame_index+1) % 
+      array_count(debug_state->frames);
   }
 }
 
 void debug_log_event(i16 id, Debug_Type type, char *name) {
-  if (!debug_state.pause) {
-    Debug_Frame *frame = debug_state.frames + debug_state.frame_index;
+  if (!debug_state->pause) {
+    Debug_Frame *frame = debug_state->frames + debug_state->frame_index;
     Debug_Event *e = frame->events + frame->event_count++;
     e->id = id;
     e->type = type;
