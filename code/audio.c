@@ -84,7 +84,14 @@ Sound load_wav(Arena *arena, String file_name) {
   return result;
 }
 
-Playing_Sound *sound_play(Sound_State *sound_state, Sound *wav) {
+void sound_init(Sound_State *sound_state) {
+  sound_state->volume_master = 1;
+  sound_state->volumes[Sound_Type_MUSIC] = 1;
+  sound_state->volumes[Sound_Type_EFFECTS] = 1;
+  sound_state->volumes[Sound_Type_INTERFACE] = 1;
+}
+
+Playing_Sound *sound_play(Sound_State *sound_state, Sound *wav, Sound_Type type) {
   assert(sound_state->sound_count < array_count(sound_state->sounds));
   Playing_Sound *snd = sound_state->sounds + sound_state->sound_count++;
   snd->wav = wav;
@@ -93,6 +100,7 @@ Playing_Sound *sound_play(Sound_State *sound_state, Sound *wav) {
   snd->target_volume = V2(1, 1);
   snd->index = sound_state->sound_count - 1;
   snd->speed = 1;
+  snd->type = type;
   
   return snd;
 }
@@ -141,8 +149,7 @@ void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
       f32 pos = snd->position + (f32)sample_index*snd->speed;
       i32 src_index = round_f32_i32(pos);
       
-      v2 volume = v2_add(snd->volume, 
-                         v2_mul_s(volume_change_per_sample, (f32)sample_index));
+      v2 volume = v2_mul_s(v2_mul_s(v2_add(snd->volume, v2_mul_s(volume_change_per_sample, (f32)sample_index)), sound_state->volume_master), sound_state->volumes[snd->type]);
       f32 src_l = wav->samples[0][src_index];
       f32 src_r = wav->samples[1][src_index];
       left[sample_index] += src_l*volume.x;

@@ -369,14 +369,7 @@ b32 collide_box_box(rect2 a_rect, Transform a_t, rect2 b_rect, Transform b_t) {
 extern GAME_UPDATE(game_update) {
   State *state = (State *)memory.perm;
   debug_state = (Debug_State *)memory.debug;
-  
-  debug_begin_frame();
-  
-  DEBUG_FUNCTION_BEGIN();
-  DEBUG_SECTION_BEGIN(_init);
-  
   Arena *arena = &state->arena;
-  
   
   if (memory.is_reloaded) {
     // NOTE(lvl5): transient memory can be destroyed at this point
@@ -386,9 +379,6 @@ extern GAME_UPDATE(game_update) {
     arena_init(&state->scratch, memory.temp, SCRATCH_SIZE);
     arena_init(&state->temp, memory.temp + SCRATCH_SIZE, 
                memory.temp_size - SCRATCH_SIZE);
-    
-    state->test_sound = load_wav(&state->temp, const_string("sounds/durarara.wav"));
-    Playing_Sound *snd = sound_play(&state->sound_state, &state->test_sound);
   }
   
   if (!state->is_initialized) {
@@ -398,6 +388,12 @@ extern GAME_UPDATE(game_update) {
   }
   
   if (!state->is_initialized) {
+    sound_init(&state->sound_state);
+    
+    state->test_sound = load_wav(&state->temp, const_string("sounds/durarara.wav"));
+    Playing_Sound *snd = sound_play(&state->sound_state, 
+                                    &state->test_sound, Sound_Type_MUSIC);
+    
     debug_state->gui.selected_frame_index = -1;
     
     state->frame_count = 0;
@@ -406,13 +402,12 @@ extern GAME_UPDATE(game_update) {
     // NOTE(lvl5): font stuff
     
     //state->font = load_ttf(state, platform, const_string("Gugi-Regular.ttf"));
-    state->font = load_ttf(&state->temp, &state->arena, const_string("arial.ttf"));
+    state->font = load_ttf(&state->temp, &state->arena, const_string("fonts/arial.ttf"));
     
-    Buffer shader_src = platform.read_entire_file(const_string("basic.glsl"));
+    Buffer shader_src = platform.read_entire_file(const_string("shaders/textured_quad.glsl"));
     gl_Parse_Result sources = gl_parse_glsl(buffer_to_string(shader_src));
     
     state->shader_basic = gl_create_shader(&state->arena, gl, sources.vertex, sources.fragment);
-    
     state->atlas = make_texture_atlas_from_folder(&state->temp, &state->arena,
                                                   const_string("sprites"));
     
@@ -444,7 +439,14 @@ extern GAME_UPDATE(game_update) {
     gl.Viewport(0, 0, (i32)screen_size.x,(i32) screen_size.y);
   }
   
-  DEBUG_SECTION_END(_init);
+  debug_begin_frame();
+  DEBUG_FUNCTION_BEGIN();
+  
+  Input debug_input = input;
+  if (debug_state->gui.terminal.is_active) {
+    zero_memory_slow(&input, sizeof(Input));
+  }
+  
   
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group _group;
@@ -574,9 +576,8 @@ extern GAME_UPDATE(game_update) {
   debug_end_frame();
   
   arena_set_mark(&state->temp, render_memory);
-  debug_draw_gui(state, screen_size, &input, dt);
   
-  
+  debug_draw_gui(state, screen_size, &debug_input, dt);
   
   arena_set_mark(&state->scratch, 0);
   

@@ -48,7 +48,8 @@ void debug_init(Arena *temp, byte *debug_memory) {
   arena_init_subarena(&debug_state->arena, &debug_state->gui.arena, kilobytes(32));
   
   Debug_GUI *gui = &debug_state->gui;
-  gui->font = load_ttf(temp, &debug_state->arena, const_string("Inconsolata-Regular.ttf"));
+  gui->font = load_ttf(temp, &debug_state->arena, 
+                       const_string("fonts/Inconsolata-Regular.ttf"));
   
   // NOTE(lvl5): variables
   debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 0};
