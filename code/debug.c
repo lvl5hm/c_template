@@ -38,9 +38,10 @@ b32 point_in_rect(v2 point, rect2 rect) {
   return result;
 }
 
-typedef enum {
-  Debug_Var_Name_PERF,
-} Debug_Var_Name;
+i32 debug_get_var_i32(Debug_Var_Name name) {
+  i32 result = debug_state->vars[name].value;
+  return result;
+}
 
 void debug_init(Arena *temp, byte *debug_memory) {
   arena_init(&debug_state->arena, debug_memory, megabytes(32));
@@ -51,6 +52,7 @@ void debug_init(Arena *temp, byte *debug_memory) {
   
   // NOTE(lvl5): variables
   debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 0};
+  debug_state->vars[Debug_Var_Name_COLLIDERS] = (Debug_Var){const_string("colliders"), 1};
   
   // NOTE(lvl5): terminal
   Debug_Terminal *term = &gui->terminal;
@@ -154,7 +156,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   v2 screen_meters = v2_div_s(screen_size, PIXELS_PER_METER);
   debug_draw_terminal(&gui->terminal, group, input, screen_meters);
   
-  if (debug_state->vars[Debug_Var_Name_PERF].value != 0) {
+  if (debug_get_var_i32(Debug_Var_Name_PERF) != 0) {
     f32 total_width = 3.0f;
     f32 total_heigt = 1.0f;
     render_translate(group, V3(-screen_meters.x*0.5f, 

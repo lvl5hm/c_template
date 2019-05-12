@@ -5,6 +5,7 @@
 #include "renderer.h"
 #include "lvl5_random.h"
 #include "font.h"
+#include "audio.h"
 
 typedef enum {
   Entity_Type_NONE,
@@ -62,6 +63,8 @@ typedef struct {
 } Animation_Instance;
 
 typedef struct {
+  Sound test_sound;
+  Sound_State sound_state;
   b32 is_initialized;
   Arena arena;
   Arena scratch;

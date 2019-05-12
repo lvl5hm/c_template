@@ -11,7 +11,7 @@
 #include "stb_truetype.h"
 
 #include "debug.c"
-
+#include "audio.c"
 
 /*
 TODO:
@@ -30,7 +30,7 @@ TODO:
  -[x] performance graphs
  -[x] something like interactive flame charts
  -[ ] debug variables and widgets
- -[ ] console?
+ -[x] console?
  -[ ] will probably have to do some introspection and metaprogramming
  -[ ] needs to work with multithreading
  -[ ] loading from a save point to debug a slow frame
@@ -41,13 +41,13 @@ TODO:
  -[ ] b-splines (bezier curves)
  
  [ ] text rendering
- -[ ] kerning
+ -[ ] kerning (i added this, but for some reason sbt doesn't return good kerning)
  -[ ] line spacing
  -[ ] utf-8 support
  -[ ] loading fonts from windows instead of stb??
  
  [ ] windows layer
- -[ ] proper opengl context creation for multisampling
+ -[x] proper opengl context creation for multisampling
  
  [ ] renderer
  -[ ] z-sorting
@@ -57,6 +57,7 @@ TODO:
  --[ ] phong shading
  
  [ ] assets
+ -[ ] better texture map packing
  -[ ] live reload
  -[ ] asset file format
  --[ ] bitmaps
@@ -65,13 +66,13 @@ TODO:
  --[ ] shaders
  -[ ] asset builder
  -[ ] streaming?
+ -[ ] splitting bit sounds into chunks?
  
  [ ] sounds
- -[ ] basic mixer
- -[ ] volume
- -[ ] speed shifting
+ -[x] basic mixer
+ -[x] volume
+ -[x] speed shifting
  -[ ] SSE?
- 
  
  ---- GAME ----
  [ ] basic player movement
@@ -385,6 +386,9 @@ extern GAME_UPDATE(game_update) {
     arena_init(&state->scratch, memory.temp, SCRATCH_SIZE);
     arena_init(&state->temp, memory.temp + SCRATCH_SIZE, 
                memory.temp_size - SCRATCH_SIZE);
+    
+    state->test_sound = load_wav(&state->temp, const_string("sounds/durarara.wav"));
+    Playing_Sound *snd = sound_play(&state->sound_state, &state->test_sound);
   }
   
   if (!state->is_initialized) {
@@ -539,13 +543,15 @@ extern GAME_UPDATE(game_update) {
           }
         }
         
-#if 0
-        if (collision) {
-          push_rect(group, rect_1m, V4(0, 1, 1, 1));
-        } else {
-          push_rect(group, rect_1m, V4(0, 1, 0, 1));
+        if (debug_get_var_i32(Debug_Var_Name_COLLIDERS)) {
+          if (collision) {
+            render_color(group, V4(0, 1, 1, 1));
+          } else {
+            render_color(group, V4(0, 1, 0, 1));
+          }
+          push_rect(group, rect_1m);
         }
-#endif
+        
         draw_robot(state, group);
         
         render_restore(group);
@@ -560,6 +566,9 @@ extern GAME_UPDATE(game_update) {
   gl.Clear(GL_COLOR_BUFFER_BIT);
   DEBUG_SECTION_END(_glClear);
   render_group_output(&state->temp, group, &state->renderer);
+  
+  Sound_Buffer *buffer = platform.request_sound_buffer();
+  sound_mix_playing_sounds(buffer, &state->sound_state, &state->temp, dt);
   
   DEBUG_FUNCTION_END();
   debug_end_frame();

@@ -64,13 +64,21 @@ typedef struct {
   i32 value;
 } Debug_Var;
 
+
+typedef enum {
+  Debug_Var_Name_PERF,
+  Debug_Var_Name_COLLIDERS,
+  
+  Debug_Var_Name_count,
+} Debug_Var_Name;
+
 typedef struct {
   Arena arena;
   Debug_Frame frames[60];
   i32 frame_index;
   b32 pause;
   
-  Debug_Var vars[32];
+  Debug_Var vars[Debug_Var_Name_count];
   
   Debug_GUI gui;
 } Debug_State;
@@ -91,6 +99,7 @@ debug_log_event(__debug_id_##name, Debug_Type_BEGIN_TIMER, #name)
 
 #define DEBUG_SECTION_END(name) \
 debug_log_event(__debug_id_##name, Debug_Type_END_TIMER, #name)
+
 
 void debug_begin_frame() {
   if (!debug_state->pause) {

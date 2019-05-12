@@ -79,6 +79,15 @@ i32 sign_i32(i32 a) {
   return result;
 }
 
+i32 round_f32_i32(f32 a) {
+  i32 result = (i32)roundf(a);
+  return result;
+}
+
+i16 round_f32_i16(f32 a) {
+  i16 result = (i16)roundf(a);
+  return result;
+}
 
 // v2
 

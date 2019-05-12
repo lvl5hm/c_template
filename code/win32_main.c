@@ -13,21 +13,21 @@
 
 #include "KHR/wglext.h"
 
-#define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPGUID lpGuid, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
+#define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPGUID lpGuid, \
+LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
 typedef DIRECT_SOUND_CREATE(Direct_Sound_Create);
 
 #define TARGET_FPS 60
 
 
 typedef struct {
-  u32 buffer_sample_count;
-  u32 samples_per_second;
+  i32 buffer_sample_count;
+  i32 samples_per_second;
   WORD single_sample_size;
   WORD channel_count;
-  u32 current_sample_index;
+  i32 current_sample_index;
   LPDIRECTSOUNDBUFFER direct_buffer;
 } win32_Sound;
-
 
 typedef enum {
   Replay_State_NONE,
@@ -150,15 +150,9 @@ gl_Funcs gl_load_functions() {
   return funcs;
 }
 
-
-
-
 PFNWGLSWAPINTERVALEXTPROC wglSwapIntervalEXT;
-
-
-
-
-
+PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB;
+PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB;
 
 void win32_replay_begin_write(Memory memory) {
   win32_Replay *r = &state.replay;
@@ -447,19 +441,19 @@ void win32_fill_audio_buffer(win32_Sound *win32_sound, Sound_Buffer *src_buffer)
                                               &second_region, &second_bytes, null);
   assert(is_locked == DS_OK);
   
-  u32 first_sample_count = first_bytes/multisample_size;
-  u32 second_sample_count = second_bytes/multisample_size;
+  i32 first_sample_count = first_bytes/multisample_size;
+  i32 second_sample_count = second_bytes/multisample_size;
   assert(first_sample_count + second_sample_count == src_buffer->count);
   
   i16 *src = src_buffer->samples;
   
-  for (u32 sample_index = 0; sample_index < first_sample_count; sample_index++) {
+  for (i32 sample_index = 0; sample_index < first_sample_count; sample_index++) {
     first_region[sample_index*2] = *src++;
     first_region[sample_index*2 + 1] = *src++;
     win32_sound->current_sample_index++;
   }
   
-  for (u32 sample_index = 0; sample_index < second_sample_count; sample_index++) {
+  for (i32 sample_index = 0; sample_index < second_sample_count; sample_index++) {
     second_region[sample_index*2] = *src++;
     second_region[sample_index*2 + 1] = *src++;
     win32_sound->current_sample_index++;
@@ -505,7 +499,7 @@ void APIENTRY opengl_debug_callback(GLenum source,
                                     GLsizei length,
                                     const GLchar* message,
                                     const void* userParam) {
-#if 0
+#if 1
   OutputDebugStringA(message);
   __debugbreak();
 #endif
@@ -638,6 +632,96 @@ DWORD WINAPI ThreadProc(void *data) {
   return 0;
 }
 
+void win32_init_opengl(HWND window) {
+  // NOTE(lvl5): create a fake context
+  HGLRC fake_context;
+  HDC device_context = GetDC(window);
+  {
+    PIXELFORMATDESCRIPTOR pixel_format_descriptor = {
+      sizeof(PIXELFORMATDESCRIPTOR),
+      1,
+      PFD_DRAW_TO_WINDOW|PFD_SUPPORT_OPENGL|PFD_DOUBLEBUFFER,    // Flags
+      PFD_TYPE_RGBA,        // The kind of framebuffer. RGBA or palette.
+      32,                   // Colordepth of the framebuffer.
+      0, 0, 0, 0, 0, 0,
+      0,
+      0,
+      0,
+      0, 0, 0, 0,
+      24,                   // Number of bits for the depthbuffer
+      8,                    // Number of bits for the stencilbuffer
+      0,                    // Number of Aux buffers in the framebuffer.
+      PFD_MAIN_PLANE,
+      0,
+      0, 0, 0
+    };
+    
+    int pixel_format = ChoosePixelFormat(device_context, &pixel_format_descriptor);
+    assert(pixel_format);
+    
+    b32 pixel_format_set = SetPixelFormat(device_context, pixel_format, 
+                                          &pixel_format_descriptor);
+    assert(pixel_format_set);
+    
+    fake_context = wglCreateContext(device_context);
+    assert(fake_context);
+    
+    b32 context_made_current = wglMakeCurrent(device_context, fake_context);
+    assert(context_made_current);
+    
+  }
+  // NOTE(lvl5): load functions
+  gl = gl_load_functions();
+  wglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
+  wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
+  wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
+  
+  {
+    // NOTE(lvl5): now we need to create an actual context
+    int attributes[] = {
+      WGL_DRAW_TO_WINDOW_ARB, GL_TRUE,
+      WGL_SUPPORT_OPENGL_ARB, GL_TRUE,
+      WGL_DOUBLE_BUFFER_ARB, GL_TRUE,
+      WGL_PIXEL_TYPE_ARB, WGL_TYPE_RGBA_ARB,
+      WGL_COLOR_BITS_ARB, 32,
+      WGL_DEPTH_BITS_ARB, 24,
+      WGL_STENCIL_BITS_ARB, 8,
+      WGL_SAMPLE_BUFFERS_ARB, 1, // Number of buffers (must be 1 at time of writing)
+      WGL_SAMPLES_ARB, 4,        // Number of samples
+      0
+    };
+    
+    i32 pixel_format;
+    u32 num_formats;
+    wglChoosePixelFormatARB(device_context, attributes, null, 1, &pixel_format,
+                            &num_formats);
+    assert(num_formats);
+    
+    int context_attributes[] = {
+      WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
+      0,
+    };
+    HGLRC opengl_context = wglCreateContextAttribsARB(device_context,
+                                                      null, context_attributes);
+    b32 context_made_current = wglMakeCurrent(device_context, opengl_context);
+    assert(context_made_current);
+    wglDeleteContext(fake_context);
+  }
+  
+  b32 interval_set = wglSwapIntervalEXT(1);
+  
+  glEnable(GL_DEBUG_OUTPUT);
+  gl.DebugMessageCallback(opengl_debug_callback, 0);
+  GLuint unusedIds = 0;
+  gl.DebugMessageControl(GL_DONT_CARE,
+                         GL_DONT_CARE,
+                         GL_DONT_CARE,
+                         0,
+                         &unusedIds,
+                         true);
+  
+}
+
 
 #define THREAD_COUNT 8
 
@@ -645,7 +729,6 @@ int CALLBACK WinMain(HINSTANCE instance,
                      HINSTANCE prevInstance,
                      LPSTR commandLine,
                      int showCommandLine) {
-  
   win32_Work_Queue high_queue = {0};
   high_queue.semaphore = CreateSemaphoreA(null, 0, array_count(high_queue.entries), null);
   win32_Thread_Info thread_infos[THREAD_COUNT];
@@ -656,9 +739,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     info->thread_index = thread_index;
     CreateThread(null, 0, ThreadProc, info, 0, null);
   }
-  
-  
-  
   
   LARGE_INTEGER performance_frequency_li;
   QueryPerformanceFrequency(&performance_frequency_li);
@@ -702,55 +782,7 @@ int CALLBACK WinMain(HINSTANCE instance,
   }
   
   // NOTE(lvl5): init openGL
-  HDC device_context = GetDC(window);
-  
-  PIXELFORMATDESCRIPTOR pixel_format_descriptor = {
-    sizeof(PIXELFORMATDESCRIPTOR),
-    1,
-    PFD_DRAW_TO_WINDOW|PFD_SUPPORT_OPENGL|PFD_DOUBLEBUFFER,    // Flags
-    PFD_TYPE_RGBA,        // The kind of framebuffer. RGBA or palette.
-    32,                   // Colordepth of the framebuffer.
-    0, 0, 0, 0, 0, 0,
-    0,
-    0,
-    0,
-    0, 0, 0, 0,
-    24,                   // Number of bits for the depthbuffer
-    8,                    // Number of bits for the stencilbuffer
-    0,                    // Number of Aux buffers in the framebuffer.
-    PFD_MAIN_PLANE,
-    0,
-    0, 0, 0
-  };
-  
-  int pixel_format = ChoosePixelFormat(device_context, &pixel_format_descriptor);
-  if (!pixel_format) return 0;
-  
-  if (!SetPixelFormat(device_context, pixel_format, 
-                      &pixel_format_descriptor)) return 0;
-  
-  HGLRC opengl_context = wglCreateContext(device_context);
-  if (!opengl_context) return 0;
-  
-  if (!wglMakeCurrent(device_context, opengl_context)) return 0;
-  
-  
-  gl = gl_load_functions();
-  
-  
-  wglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
-  
-  b32 interval_set = wglSwapIntervalEXT(1);
-  
-  glEnable(GL_DEBUG_OUTPUT);
-  gl.DebugMessageCallback(opengl_debug_callback, 0);
-  GLuint unusedIds = 0;
-  gl.DebugMessageControl(GL_DONT_CARE,
-                         GL_DONT_CARE,
-                         GL_DONT_CARE,
-                         0,
-                         &unusedIds,
-                         true);
+  win32_init_opengl(window);
   
   // NOTE(lvl5): init sound
   {
@@ -772,6 +804,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     state.sound = win32_sound;
   }
   
+  HDC device_context = GetDC(window);
   
   Memory game_memory;
   game_memory.perm_size = megabytes(64);

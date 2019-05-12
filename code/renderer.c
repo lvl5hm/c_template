@@ -191,7 +191,6 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state) {
   gl.VertexAttribDivisor(7, 1);
   gl.BindVertexArray(null);
   
-  
   // NOTE(lvl5): buffer data
   Quad_Vertex vertices[4] = {
     (Quad_Vertex){V3(0, 1, 0)},
@@ -202,7 +201,6 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state) {
   gl.BindBuffer(GL_ARRAY_BUFFER, renderer->vertex_vbo);
   gl.BufferData(GL_ARRAY_BUFFER, array_count(vertices)*sizeof(Quad_Vertex), 
                 vertices, GL_STATIC_DRAW);
-  
   
   gl.GenTextures(1, &renderer->texture);
   gl.BindTexture(GL_TEXTURE_2D, renderer->texture);
@@ -295,10 +293,8 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
             
             mat4x4 view_matrix = transform_apply(mat4x4_identity(), 
                                                  view_transform);
-            
             quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
                                instances, instance_count);
-            
             instance_count = 0;
           }
           
@@ -336,7 +332,6 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
     view_transform.scale = v2_to_v3(gl_units_per_meter, 1.0f);
     
     mat4x4 view_matrix = transform_apply(mat4x4_identity(), view_transform);
-    
     quad_renderer_draw(renderer, &atlas->bmp, view_matrix, 
                        instances, instance_count);
   }

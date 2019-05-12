@@ -3,7 +3,7 @@
 #include "lvl5_math.h"
 #include "lvl5_opengl.h"
 
-#define SAMPLES_PER_SECOND 48000
+#define SAMPLES_PER_SECOND 44100
 
 #define complete_past_writes_before_future_writes() _WriteBarrier()
 #define complete_past_reads_before_future_reads() _ReadBarrier()
@@ -12,14 +12,9 @@
 
 typedef struct {
   i16 *samples;
-  u32 count;
-  u32 overwrite_count;
+  i32 count;
+  i32 overwrite_count;
 } Sound_Buffer;
-
-typedef struct {
-  i16 *samples[2];
-  u32 count;
-} Sound;
 
 typedef struct {
   bool is_down;
@@ -145,8 +140,8 @@ typedef struct {
 } Platform;
 
 
-gl_Funcs gl;
-Platform platform;
+globalvar gl_Funcs gl;
+globalvar Platform platform;
 
 #define GAME_UPDATE(name) void name(v2 screen_size, Memory memory, \
 Input input, f32 dt, Platform _platform)
