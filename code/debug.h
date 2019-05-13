@@ -49,6 +49,11 @@ typedef struct {
 } Debug_Terminal;
 
 typedef struct {
+  String name;
+  Arena *arena;
+} Debug_Arena;
+
+typedef struct {
   Arena arena;
   Font font;
   i32 selected_frame_index; // -1 == no frame selected
@@ -57,6 +62,8 @@ typedef struct {
   
   u64 node_memory;
   Debug_Terminal terminal;
+  Debug_Arena arenas[32];
+  i32 arena_count;
 } Debug_GUI;
 
 typedef struct {
@@ -68,6 +75,7 @@ typedef struct {
 typedef enum {
   Debug_Var_Name_PERF,
   Debug_Var_Name_COLLIDERS,
+  Debug_Var_Name_MEMORY,
   
   Debug_Var_Name_count,
 } Debug_Var_Name;

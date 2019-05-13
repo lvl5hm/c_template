@@ -69,10 +69,11 @@ TODO:
  -[ ] splitting bit sounds into chunks?
  
  [ ] sounds
+ -[ ] playing sounds space relative
  -[x] basic mixer
  -[x] volume
  -[x] speed shifting
- -[ ] SSE?
+ -[x] SSE?
  
  ---- GAME ----
  [ ] basic player movement
@@ -385,6 +386,11 @@ extern GAME_UPDATE(game_update) {
     arena_init(&state->arena, memory.perm + sizeof(State), 
                memory.perm_size - sizeof(State));
     debug_init(&state->temp, memory.debug + sizeof(Debug_State));
+    
+    debug_add_arena(&state->arena, const_string("main"));
+    debug_add_arena(&state->temp, const_string("temp"));
+    debug_add_arena(&debug_state->arena, const_string("debug_main"));
+    debug_add_arena(&debug_state->gui.arena, const_string("debug_gui"));
   }
   
   if (!state->is_initialized) {
@@ -442,9 +448,9 @@ extern GAME_UPDATE(game_update) {
   debug_begin_frame();
   DEBUG_FUNCTION_BEGIN();
   
-  Input debug_input = input;
+  Input *debug_input = input;
   if (debug_state->gui.terminal.is_active) {
-    zero_memory_slow(&input, sizeof(Input));
+    input = &state->empty_input;
   }
   
   
@@ -474,7 +480,7 @@ extern GAME_UPDATE(game_update) {
       } break;
       case Entity_Type_PLAYER: {
         
-        if (input.start.is_down) {
+        if (input->start.is_down) {
           entity->t.angle += 0.01f;
         }
         
@@ -482,10 +488,10 @@ extern GAME_UPDATE(game_update) {
         //String text = scratch_sprintf(const_string("robot is at (%i, %i)"), (i32)entity->t.p.x, (i32)entity->t.p.y);
         
         
-        i32 h_speed = (input.move_right.is_down - 
-                       input.move_left.is_down);
-        i32 v_speed = (input.move_up.is_down - 
-                       input.move_down.is_down);
+        i32 h_speed = (input->move_right.is_down - 
+                       input->move_left.is_down);
+        i32 v_speed = (input->move_up.is_down - 
+                       input->move_down.is_down);
         
         //entity->t.p = v2_to_v3(v2_sub(mouse_p_meters, half_screen_size_meters), 0);
 #define PLAYER_SPEED 0.03f
@@ -498,7 +504,7 @@ extern GAME_UPDATE(game_update) {
           entity->t.scale.x = 1;
         }
         
-        if (input.mouse.left.is_down) {
+        if (input->mouse.left.is_down) {
           h_speed = 1;
         }
         
@@ -577,7 +583,7 @@ extern GAME_UPDATE(game_update) {
   
   arena_set_mark(&state->temp, render_memory);
   
-  debug_draw_gui(state, screen_size, &debug_input, dt);
+  debug_draw_gui(state, screen_size, debug_input, dt);
   
   arena_set_mark(&state->scratch, 0);
   

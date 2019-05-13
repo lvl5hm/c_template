@@ -54,6 +54,8 @@ void debug_init(Arena *temp, byte *debug_memory) {
   // NOTE(lvl5): variables
   debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 0};
   debug_state->vars[Debug_Var_Name_COLLIDERS] = (Debug_Var){const_string("colliders"), 1};
+  debug_state->vars[Debug_Var_Name_MEMORY] = (Debug_Var){const_string("memory"), 0};
+  
   
   // NOTE(lvl5): terminal
   Debug_Terminal *term = &gui->terminal;
@@ -63,6 +65,12 @@ void debug_init(Arena *temp, byte *debug_memory) {
   term->input_data[0] = '>';
   term->input_count = 1;
   term->cursor = 1;
+}
+
+void debug_add_arena(Arena *arena, String name) {
+  Debug_Arena *da = debug_state->gui.arenas + debug_state->gui.arena_count++;
+  da->name = name;
+  da->arena = arena;
 }
 
 #define DEBUG_BG_COLOR V4(0, 0, 0, 0.4f)
@@ -157,6 +165,28 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   v2 screen_meters = v2_div_s(screen_size, PIXELS_PER_METER);
   debug_draw_terminal(&gui->terminal, group, input, screen_meters);
   
+  if (debug_get_var_i32(Debug_Var_Name_MEMORY) != 0) {
+    render_save(group);
+    render_translate(group, V3(-screen_meters.x*0.5f, 
+                               screen_meters.y*0.5f-1.2f,
+                               0));
+    
+    for (i32 i = 0; i < gui->arena_count; i++) {
+      Debug_Arena *debug_arena = gui->arenas + i;
+      char buffer[256];
+      sprintf_s(buffer, array_count(buffer), "[%s]: %lld/%lld", 
+                to_c_string(&debug_state->arena, debug_arena->name),
+                debug_arena->arena->size, debug_arena->arena->capacity);
+      String str = from_c_string(buffer);
+      push_text(group, str);
+      render_translate(group, V3(0, -0.2f, 0));
+    }
+    
+    
+    
+    render_restore(group);
+  }
+  
   if (debug_get_var_i32(Debug_Var_Name_PERF) != 0) {
     f32 total_width = 3.0f;
     f32 total_heigt = 1.0f;
@@ -174,10 +204,10 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
       u64 end_cycles = frame->events[frame->event_count-1].cycles;
       u64 duration = end_cycles - begin_cycles;
       
-      char buffer[256];
       render_save(group);
       render_color(group, V4(1, 1, 1, 1));
       render_translate(group, V3(total_width + 0.1f, 0.9f, 0));
+      char buffer[256];
       sprintf_s(buffer, array_count(buffer), "%.2f ms", 
                 (f32)(end_cycles - begin_cycles)/(f32)MAX_CYCLES*16.6f);
       

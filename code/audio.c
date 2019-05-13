@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "lvl5_intrinsics.h"
 
 #define make_riff_id(str) ((str[0] << 0)|(str[1] << 8)|(str[2] << 16)|(str[3] << 24))
 
@@ -73,8 +74,8 @@ Sound load_wav(Arena *arena, String file_name) {
   Sound result = {0};
   result.count = data_chunk->size / 4; // 4 is double sample size
   
-  result.samples[0] = arena_push_array(arena, i16, result.count);
-  result.samples[1] = arena_push_array(arena, i16, result.count);
+  result.samples[0] = (i16 *)_arena_push_memory(arena, sizeof(i16)*result.count, 32);
+  result.samples[1] = (i16 *)_arena_push_memory(arena, sizeof(i16)*result.count, 32);
   i16 *interleaved_samples = (i16 *)(data_chunk + 1);
   for (u32 sample_index = 0; sample_index < result.count; sample_index++) {
     result.samples[0][sample_index] = interleaved_samples[sample_index*2];
@@ -121,20 +122,27 @@ void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
                               Arena *temp, f32 dt) {
   DEBUG_FUNCTION_BEGIN();
   u64 mixing_memory = arena_get_mark(temp);
+  assert(dst->count % 8 == 0);
+  
+  i32 count_div_4 = dst->count/4;
+  __m128 zero_4 = _mm_set_ps1(0);
   
   DEBUG_SECTION_BEGIN(_clear_buffer);
-  f32 *left = arena_push_array(temp, f32, dst->count);
-  f32 *right = arena_push_array(temp, f32, dst->count);
-  for (i32 i = 0; i < dst->count; i++) {
-    left[i] = 0;
-    right[i] = 0;
+  
+  __m128 *left = arena_push_array(temp, __m128, count_div_4);
+  __m128 *right = arena_push_array(temp, __m128, count_div_4);
+  for (i32 i = 0; i < count_div_4; i++) {
+    _mm_store_ps((float *)(left+i), zero_4); 
+    _mm_store_ps((float *)(right+i), zero_4); 
   }
+  
   DEBUG_SECTION_END(_clear_buffer);
   
   for (i32 sound_index = 0; sound_index < sound_state->sound_count; sound_index++) {
     DEBUG_SECTION_BEGIN(_mix_single_sound);
     Playing_Sound *snd = sound_state->sounds + sound_index;
     Sound *wav = snd->wav;
+    assert(wav->count % 8 == 0);
     
     i32 samples_to_mix = dst->count;
     i32 samples_left_in_sound = round_f32_i32((wav->count - snd->position)/snd->speed);
@@ -145,15 +153,52 @@ void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
     v2 volume_change_per_frame = v2_mul_s(v2_sub(snd->target_volume, snd->volume), dt);
     v2 volume_change_per_sample = v2_div_s(volume_change_per_frame, (f32)samples_to_mix);
     
-    for (i32 sample_index = 0; sample_index < samples_to_mix; sample_index++) {
-      f32 pos = snd->position + (f32)sample_index*snd->speed;
-      i32 src_index = round_f32_i32(pos);
+    __m128 speed_4 = _mm_set_ps1(snd->speed);
+    __m128 initial_pos_4 = _mm_set_ps1(snd->position);
+    
+    __m128 initial_volume_l_4 = _mm_set_ps1(snd->volume.x);
+    __m128 initial_volume_r_4 = _mm_set_ps1(snd->volume.y);
+    
+    __m128 volume_change_per_sample_l_4 = _mm_set_ps1(volume_change_per_sample.x);
+    __m128 volume_change_per_sample_r_4 = _mm_set_ps1(volume_change_per_sample.y);
+    
+    for (i32 sample_index = 0; sample_index < samples_to_mix; sample_index += 4) {
+      __m128 sample_index_ps = _mm_setr_ps((f32)sample_index+0,
+                                           (f32)sample_index+1,
+                                           (f32)sample_index+2,
+                                           (f32)sample_index+3);
+      __m128 pos = _mm_add_ps(initial_pos_4, _mm_mul_ps(sample_index_ps, speed_4));
+      __m128i src_index = _mm_cvtps_epi32(pos);
       
-      v2 volume = v2_mul_s(v2_mul_s(v2_add(snd->volume, v2_mul_s(volume_change_per_sample, (f32)sample_index)), sound_state->volume_master), sound_state->volumes[snd->type]);
-      f32 src_l = wav->samples[0][src_index];
-      f32 src_r = wav->samples[1][src_index];
-      left[sample_index] += src_l*volume.x;
-      right[sample_index] += src_r*volume.y;
+      __m128 volume_l = _mm_add_ps(initial_volume_l_4, 
+                                   _mm_mul_ps(sample_index_ps,
+                                              volume_change_per_sample_l_4));
+      __m128 volume_r = _mm_add_ps(initial_volume_r_4, 
+                                   _mm_mul_ps(sample_index_ps,
+                                              volume_change_per_sample_r_4));
+      
+      __m128 sample_l = _mm_cvtepi32_ps(_mm_setr_epi32(wav->samples[0][MEMi(src_index, 0)],
+                                                       wav->samples[0][MEMi(src_index, 1)],
+                                                       wav->samples[0][MEMi(src_index, 2)],
+                                                       wav->samples[0][MEMi(src_index, 3)]));
+      
+      __m128 sample_r = _mm_cvtepi32_ps(_mm_setr_epi32(wav->samples[1][MEMi(src_index, 0)],
+                                                       wav->samples[1][MEMi(src_index, 1)],
+                                                       wav->samples[1][MEMi(src_index, 2)],
+                                                       wav->samples[1][MEMi(src_index, 3)]));
+      
+      __m128 sample_with_volume_l = _mm_mul_ps(sample_l, volume_l);
+      __m128 sample_with_volume_r = _mm_mul_ps(sample_r, volume_r);
+      
+      i32 sample_index_div_4 = sample_index/4;
+      __m128 dst_l = _mm_load_ps((float *)(left + sample_index_div_4));
+      __m128 dst_r = _mm_load_ps((float *)(right + sample_index_div_4));
+      
+      __m128 mixed_sample_l = _mm_add_ps(dst_l, sample_with_volume_l);
+      __m128 mixed_sample_r = _mm_add_ps(dst_r, sample_with_volume_r);
+      
+      _mm_store_ps((float *)(left + sample_index_div_4), mixed_sample_l);
+      _mm_store_ps((float *)(right + sample_index_div_4), mixed_sample_r);
     }
     
     snd->volume = v2_add(snd->volume, volume_change_per_frame);
@@ -167,12 +212,19 @@ void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
   }
   
   DEBUG_SECTION_BEGIN(_fill_sound_buffer);
-  for (i32 i = 0; i < dst->count; i++) {
-    dst->samples[i*2] = round_f32_i16(left[i]);
-    dst->samples[i*2+1] = round_f32_i16(right[i]);
-  }
-  DEBUG_SECTION_END(_fill_sound_buffer);
   
+  for (i32 i = 0; i < count_div_4; i++) {
+    __m128i l = _mm_cvtps_epi32(left[i]);
+    __m128i r = _mm_cvtps_epi32(right[i]);
+    
+    __m128i lr0 = _mm_unpacklo_epi32(l, r);
+    __m128i lr1 = _mm_unpackhi_epi32(l, r);
+    
+    __m128i packed = _mm_packs_epi32(lr0, lr1);
+    _mm_store_si128((__m128i *)dst->samples+i, packed);
+  }
+  
+  DEBUG_SECTION_END(_fill_sound_buffer);
   arena_set_mark(temp, mixing_memory);
   
   DEBUG_FUNCTION_END();

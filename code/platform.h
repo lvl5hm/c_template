@@ -144,7 +144,7 @@ globalvar gl_Funcs gl;
 globalvar Platform platform;
 
 #define GAME_UPDATE(name) void name(v2 screen_size, Memory memory, \
-Input input, f32 dt, Platform _platform)
+Input *input, f32 dt, Platform _platform)
 typedef GAME_UPDATE(Game_Update);
 
 

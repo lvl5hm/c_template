@@ -386,7 +386,9 @@ PLATFORM_READ_ENTIRE_FILE(win32_read_entire_file) {
 DWORD win32_sound_get_write_start() {
   win32_Sound win32_sound = state.sound;
   
-  DWORD write_start = win32_sound.current_sample_index*win32_sound_get_multisample_size(&win32_sound) % win32_sound_get_buffer_size_in_bytes(&win32_sound);
+  DWORD write_start = win32_sound.current_sample_index*
+    win32_sound_get_multisample_size(&win32_sound) % 
+    win32_sound_get_buffer_size_in_bytes(&win32_sound);
   
   return write_start;
 }
@@ -399,13 +401,16 @@ Sound_Buffer *win32_request_sound_buffer() {
   DWORD write_length = 0;
   
   DWORD write_cursor;
-  HRESULT got_position = IDirectSoundBuffer_GetCurrentPosition(sound->direct_buffer, null, &write_cursor);
+  HRESULT got_position = IDirectSoundBuffer_GetCurrentPosition(sound->direct_buffer,
+                                                               null, &write_cursor);
   assert(got_position == DS_OK);
   
   u32 bytes_per_frame = win32_sound_get_bytes_per_second(sound)/60;
-  u32 overwrite_bytes = game_sound_buffer->overwrite_count*win32_sound_get_multisample_size(sound);
   
-  DWORD target_cursor = (write_cursor + bytes_per_frame + overwrite_bytes) % win32_sound_get_buffer_size_in_bytes(sound);
+#define OVERWRITE_BYTES align_pow_2(sound->samples_per_second/TARGET_FPS*win32_sound_get_multisample_size(sound), 32)
+  
+  DWORD target_cursor = align_pow_2((write_cursor + bytes_per_frame + OVERWRITE_BYTES) %
+                                    win32_sound_get_buffer_size_in_bytes(sound), 32);
   
   if (target_cursor == write_start) {
     write_length = 0;
@@ -413,13 +418,14 @@ Sound_Buffer *win32_request_sound_buffer() {
     if (target_cursor > write_start) {
       write_length = target_cursor - write_start;
     } else {
-      write_length = win32_sound_get_buffer_size_in_bytes(sound) - write_start + target_cursor;
+      write_length = win32_sound_get_buffer_size_in_bytes(sound) - 
+        write_start + target_cursor;
     }
   }
   
   game_sound_buffer->count = write_length/win32_sound_get_multisample_size(sound);
-  game_sound_buffer->overwrite_count = sound->samples_per_second/TARGET_FPS;
-  assert(game_sound_buffer->count < sound->buffer_sample_count);
+  game_sound_buffer->overwrite_count = OVERWRITE_BYTES/
+    win32_sound_get_multisample_size(sound);
   
   return game_sound_buffer;
 }
@@ -791,7 +797,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     win32_sound.samples_per_second = SAMPLES_PER_SECOND;
     win32_sound.channel_count = 2;
     win32_sound.single_sample_size = sizeof(i16);
-    win32_sound.buffer_sample_count = win32_sound.samples_per_second;
+    win32_sound.buffer_sample_count = align_pow_2(win32_sound.samples_per_second, 16);
     
     win32_sound.direct_buffer = win32_init_dsound(window, &win32_sound);
     
@@ -884,7 +890,6 @@ int CALLBACK WinMain(HINSTANCE instance,
         assert(game_update);
         
         last_game_dll_write_time = current_write_time;
-        
         game_memory.is_reloaded = true;
       } else {
         game_memory.is_reloaded = false;
@@ -1044,7 +1049,7 @@ int CALLBACK WinMain(HINSTANCE instance,
       game_input = win32_replay_get_next_input(game_memory);
     }
     
-    game_update(game_screen, game_memory, game_input, state.dt, platform);
+    game_update(game_screen, game_memory, &game_input, state.dt, platform);
     
     if (state.game_sound_buffer.count) {
       win32_fill_audio_buffer(&state.sound, &state.game_sound_buffer);

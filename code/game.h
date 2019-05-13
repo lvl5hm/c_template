@@ -63,6 +63,7 @@ typedef struct {
 } Animation_Instance;
 
 typedef struct {
+  Input empty_input;
   Sound test_sound;
   Sound_State sound_state;
   b32 is_initialized;
