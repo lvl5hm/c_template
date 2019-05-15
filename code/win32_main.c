@@ -407,7 +407,7 @@ Sound_Buffer *win32_request_sound_buffer() {
   
   u32 bytes_per_frame = win32_sound_get_bytes_per_second(sound)/60;
   
-#define OVERWRITE_BYTES align_pow_2(sound->samples_per_second/TARGET_FPS*win32_sound_get_multisample_size(sound), 32)
+#define OVERWRITE_BYTES align_pow_2(sound->samples_per_second/TARGET_FPS*win32_sound_get_multisample_size(sound)*2, 32)
   
   DWORD target_cursor = align_pow_2((write_cursor + bytes_per_frame + OVERWRITE_BYTES) %
                                     win32_sound_get_buffer_size_in_bytes(sound), 32);
@@ -1059,8 +1059,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     f64 current_time = win32_get_time();
     f32 time_used = (f32)(current_time - time_frame_start);
     
-    state.dt = (f32)(current_time - last_time);
-    if (state.dt > 0.1f) state.dt = 1.0f/TARGET_FPS;
+    //state.dt = (f32)(current_time - last_time);
+    state.dt = 1.0f/TARGET_FPS;
     
     
     u64 current_cycles = __rdtsc();

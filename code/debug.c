@@ -484,6 +484,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
       if (debug_state->gui.selected_frame_index >= 0) {
         if (input->mouse.left.went_down) {
           debug_state->gui.selected_frame_index = -1;
+          arena_set_mark(&gui->arena, gui->node_memory);
         }
       } else {
         debug_state->pause = false;

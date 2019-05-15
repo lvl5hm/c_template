@@ -44,6 +44,7 @@ TODO:
  -[ ] kerning (i added this, but for some reason sbt doesn't return good kerning)
  -[ ] line spacing
  -[ ] utf-8 support
+ -[ ] rendering needs to be way more optimized
  -[ ] loading fonts from windows instead of stb??
  
  [ ] windows layer
@@ -114,30 +115,59 @@ Entity *get_entity(State *state, i32 index) {
   assert(index < state->entity_count);
   assert(index != 0);
   Entity *result = state->entities + index;
+  if (!result->is_active) {
+    result = null;
+  }
   return result;
 }
 
-i32 add_entity(State *state, Entity_Type type) {
+Entity *add_entity(State *state, Entity_Type type) {
   assert(state->entity_count < array_count(state->entities));
   
-  i32 result = state->entity_count++;
-  Entity *e = state->entities + result;
+  i32 index;
+  if (state->entities_free_count) {
+    index = state->entities_free_list[--state->entities_free_count];
+  } else {
+    index = state->entity_count++;
+  }
+  
+  Entity *e = state->entities + index;
+  zero_memory_slow(e, sizeof(Entity));
+  
   e->is_active = true;
   e->type = type;
   e->t = transform_default();
-  return result;
+  e->index = index;
+  
+  return e;
 }
 
-i32 add_entity_player(State *state) {
-  i32 index = add_entity(state, Entity_Type_PLAYER);
-  return index;
+Entity *add_entity_player(State *state) {
+  Entity *e = add_entity(state, Entity_Type_PLAYER);
+  e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
+  e->box_collider.active = true;
+  
+  return e;
 }
+
+
+Entity *add_entity_enemy(State *state) {
+  Entity *e = add_entity(state, Entity_Type_ENEMY);
+  e->circle_collider.r = 0.5f;
+  e->circle_collider.origin = v2_zero();
+  e->circle_collider.active = true;
+  
+  e->t.scale = V3(0.3f, 0.3f, 1);
+  
+  return e;
+}
+
+
 
 void remove_entity(State *state, i32 index) {
-  Entity *last = state->entities + state->entity_count - 1;
   Entity *removed = state->entities + index;
-  *removed = *last;
-  state->entity_count--;
+  removed->is_active = false;
+  state->entities_free_list[state->entities_free_count++] = index;
 }
 
 
@@ -225,9 +255,9 @@ void draw_robot(State *state, Render_Group *group) {
   
   {
     Animation_Instance inst = state->robot_anim;
-    f32 *old_pos = inst.positions;
+    f32 *oldpos = inst.positions;
     inst.positions = arena_push_array(&state->scratch, f32, 2);
-    copy_memory_slow(inst.positions, old_pos, sizeof(f32)*2);
+    copy_memory_slow(inst.positions, oldpos, sizeof(f32)*2);
     inst.positions[Robot_Animation_WALK] += 0.5f;
     
     Animation_Frame frame = animation_pack_get_frame(state->robot_parts[Robot_Part_RIGHT_LEG], 
@@ -280,6 +310,10 @@ Sprite make_sprite(Texture_Atlas *atlas, i32 index, v2 origin) {
 }
 
 
+void add_force(Entity *e, v2 force) {
+  e->dp = v3_add(v2_to_v3(force, 0), e->dp);
+}
+
 b32 collide_aabb_aabb(rect2 a, rect2 b) {
   b32 result = !(a.max.x < b.min.x ||
                  a.max.y < b.min.y ||
@@ -302,11 +336,9 @@ Rect_Polygon aabb_transform(rect2 box, Transform t) {
   
   mat4x4 matrix4 = transform_apply(mat4x4_identity(), t);
   
-  DEBUG_SECTION_BEGIN(_set_vertices);
   for (i32 i = 0; i < 4; i++) {
     result.v[i] = mat4x4_mul_v4(matrix4, v2_to_v4(result.v[i], 1, 1)).xy;
   }
-  DEBUG_SECTION_END(_set_vertices);
   
   DEBUG_FUNCTION_END();
   return result;
@@ -368,6 +400,8 @@ b32 collide_box_box(rect2 a_rect, Transform a_t, rect2 b_rect, Transform b_t) {
 #define SCRATCH_SIZE kilobytes(32)
 
 extern GAME_UPDATE(game_update) {
+  dt *= 0.3f;
+  
   State *state = (State *)memory.perm;
   debug_state = (Debug_State *)memory.debug;
   Arena *arena = &state->arena;
@@ -387,6 +421,15 @@ extern GAME_UPDATE(game_update) {
                memory.perm_size - sizeof(State));
     debug_init(&state->temp, memory.debug + sizeof(Debug_State));
     
+    // NOTE(lvl5): when live reloading, the sound file can be overwritten
+    // with garbage since it's located in temp arena right now
+    state->test_sound = load_wav(&state->temp, 
+                                 const_string("sounds/durarara.wav"));
+    state->snd_bop = load_wav(&state->temp, const_string("sounds/bop.wav"));
+    
+    //Playing_Sound *snd = sound_play(&state->sound_state, 
+    //&state->test_sound, Sound_Type_MUSIC);
+    
     debug_add_arena(&state->arena, const_string("main"));
     debug_add_arena(&state->temp, const_string("temp"));
     debug_add_arena(&debug_state->arena, const_string("debug_main"));
@@ -395,10 +438,6 @@ extern GAME_UPDATE(game_update) {
   
   if (!state->is_initialized) {
     sound_init(&state->sound_state);
-    
-    state->test_sound = load_wav(&state->temp, const_string("sounds/durarara.wav"));
-    Playing_Sound *snd = sound_play(&state->sound_state, 
-                                    &state->test_sound, Sound_Type_MUSIC);
     
     debug_state->gui.selected_frame_index = -1;
     
@@ -425,6 +464,7 @@ extern GAME_UPDATE(game_update) {
     state->debug_atlas.sprite_count = 1;
     
     
+    state->spr_circle = make_sprite(&state->atlas, 0, V2(0.5f, 0.5f));
     state->spr_robot_eye = make_sprite(&state->atlas, 0, V2(0.5f, 0.5f));
     state->spr_robot_leg = make_sprite(&state->atlas, 1, V2(0, 1));
     state->spr_robot_torso = make_sprite(&state->atlas, 2, V2(0.5f, 0.5f));
@@ -434,10 +474,35 @@ extern GAME_UPDATE(game_update) {
     
     quad_renderer_init(&state->renderer, state);
     add_entity(state, Entity_Type_NONE); // filler entity
-    add_entity(state, Entity_Type_PLAYER);
-    add_entity(state, Entity_Type_ENEMY);
+    //add_entity_player(state);
+    
+    f32 radius = 0.15f;
+    i32 row_length = 5;
+    f32 start_x = -radius*row_length + radius;
+    f32 y = radius*row_length;
+    
+    while (row_length > 0) {
+      for (i32 i = 0; i < row_length; i++) {
+        Entity *enemy = add_entity_enemy(state);
+        enemy->t.p.x = start_x + i*radius*2 +
+          random_range(&state->rand, -0.01f, 0.01f);
+        enemy->t.p.y = y;
+      }
+      start_x += radius;
+      y -= radius*2;
+      row_length--;
+    }
+    
+    
+    
+    {
+      Entity *enemy = add_entity_enemy(state);
+      enemy->t.p.x = 0.0f;
+      enemy->t.p.y = -2.0f;
+    }
     
 #include "robot_animation.h"
+    
     state->is_initialized = true;
   }
   
@@ -459,7 +524,8 @@ extern GAME_UPDATE(game_update) {
   Render_Group *group = &_group;
   render_group_init(&state->temp, state, group, 100000, screen_size);
   
-  rect2 rect_1m = rect2_center_size(V2(0, 0), V2(2, 1));
+  v2 half_screen_meters = v2_div_s(screen_size, PIXELS_PER_METER*2);
+  v2 mouse_meters = get_mouse_p_meters(input, screen_size);
   
   DEBUG_SECTION_BEGIN(_entities);
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
@@ -467,105 +533,134 @@ extern GAME_UPDATE(game_update) {
     
     switch (entity->type) {
       case Entity_Type_ENEMY: {
-        entity->t.angle += 0.01f;
-        entity->t.p = V3(2.0f, 0, 0);
-        render_save(group);
-        render_transform(group, entity->t);
         
-        render_color(group, V4(1, 0, 0, 1));
-        push_rect(group, rect_1m);
-        
-        
-        render_restore(group);
       } break;
       case Entity_Type_PLAYER: {
-        
-        if (input->start.is_down) {
-          entity->t.angle += 0.01f;
-        }
-        
-        entity->t.scale = V3(1, 1, 1);
-        //String text = scratch_sprintf(const_string("robot is at (%i, %i)"), (i32)entity->t.p.x, (i32)entity->t.p.y);
-        
-        
+#if 0
         i32 h_speed = (input->move_right.is_down - 
                        input->move_left.is_down);
         i32 v_speed = (input->move_up.is_down - 
                        input->move_down.is_down);
         
-        //entity->t.p = v2_to_v3(v2_sub(mouse_p_meters, half_screen_size_meters), 0);
-#define PLAYER_SPEED 0.03f
-        
-        v3 d_p = v3_mul_s(V3((f32)h_speed, (f32)v_speed, 0), PLAYER_SPEED);
-        entity->t.p = v3_add(entity->t.p, d_p);
-        
-        entity->t.scale = V3(1, 1, 1);
-        if (entity->t.scale.x == 0) {
-          entity->t.scale.x = 1;
-        }
-        
-        if (input->mouse.left.is_down) {
-          h_speed = 1;
-        }
-        
-        Animation_Instance *inst = &state->robot_anim;
-        
-        if (h_speed || v_speed) {
-          inst->positions[Robot_Animation_WALK] += 0.03f;
-          inst->weights[Robot_Animation_WALK] += 0.05f;
-          inst->weights[Robot_Animation_IDLE] -= 0.05f;
-        } else {
-          inst->positions[Robot_Animation_IDLE] += 0.03f;
-          inst->weights[Robot_Animation_WALK] -= 0.05f;
-          inst->weights[Robot_Animation_IDLE] += 0.05f;
-        }
-        
-        if (inst->weights[Robot_Animation_IDLE] > 1) inst->weights[Robot_Animation_IDLE] = 1;
-        
-        if (inst->weights[Robot_Animation_IDLE] < 0) {
-          inst->weights[Robot_Animation_IDLE] = 0;
-          inst->positions[Robot_Animation_IDLE] = 0;
-        }
-        if (inst->weights[Robot_Animation_WALK] > 1) inst->weights[Robot_Animation_WALK] = 1;
-        
-        if (inst->weights[Robot_Animation_WALK] < 0) {
-          inst->weights[Robot_Animation_WALK] = 0;
-          inst->positions[Robot_Animation_WALK] = 0;
-        }
-        
+        entity->dp = v2_to_v3(v2_mul_s(v2_i(h_speed, v_speed), 0.01f), 0);
+        entity->t.p = v3_add(entity->t.p, entity->dp);
         
         render_save(group);
         render_transform(group, entity->t);
         
-        
-        b32 collision = false;
-        for (i32 other_index = 1;
-             other_index < state->entity_count;
-             other_index++) {
-          if (other_index != entity_index) {
-            Entity *other = get_entity(state, other_index);
-            if (collide_box_box(rect_1m, entity->t, rect_1m, other->t)) {
-              collision = true;
-              break;
-            }
-          }
-        }
-        
-        if (debug_get_var_i32(Debug_Var_Name_COLLIDERS)) {
-          if (collision) {
-            render_color(group, V4(0, 1, 1, 1));
-          } else {
-            render_color(group, V4(0, 1, 0, 1));
-          }
-          push_rect(group, rect_1m);
-        }
-        
-        draw_robot(state, group);
+        //draw_robot(state, group);
         
         render_restore(group);
+#endif
       } break;
     }
+    
+    
+    
+    entity->t.p = v3_add(entity->t.p, v3_mul_s(entity->dp, dt));
+    f32 FRICTION = 0.5f*dt;
+    entity->dp = v3_mul_s(entity->dp, 1 - FRICTION);
+    f32 r = entity->circle_collider.r*entity->t.scale.x;
+    
+    b32 do_bop = false;
+    
+    if (entity->t.p.x + r > half_screen_meters.x) {
+      entity->dp.x *= -1;
+      do_bop = true;
+    }
+    if (entity->t.p.x - r < -half_screen_meters.x) {
+      entity->dp.x *= -1;
+      do_bop = true;
+    }
+    
+    if (entity->t.p.y + r > half_screen_meters.y) {
+      entity->dp.y *= -1;
+      do_bop = true;
+    }
+    if (entity->t.p.y - r < -half_screen_meters.y) {
+      entity->dp.y *= -1;
+      do_bop = true;
+    }
+    
+    if (input->mouse.left.went_down && point_in_circle(mouse_meters, entity->t.p.xy, r)) {
+      state->selected_entity = entity_index;
+    }
+    
+    for (i32 other_index = 1; other_index < state->entity_count; other_index++) {
+      Entity *other = get_entity(state, other_index);
+      if (other != entity) {
+        f32 radius_sum = entity->circle_collider.r*entity->t.scale.x + other->circle_collider.r*other->t.scale.x;
+        v2 diff = v2_sub(other->t.p.xy, entity->t.p.xy);
+        f32 dist = v2_length(diff);
+        
+        if (dist < radius_sum) {
+          if (entity->dp.x || entity->dp.y || other->dp.x || other->dp.y) {
+            do_bop = true;
+          }
+          
+          // NOTE(lvl5): collision happened
+          v3 entity_new_dp = entity->dp;
+          v3 other_new_dp = other->dp;
+          v2 unit = v2_unit(diff);
+          
+          f32 overlap = dist - radius_sum;
+          entity->t.p.xy = v2_add(entity->t.p.xy,
+                                  v2_mul_s(unit, overlap*0.5f));
+          other->t.p.xy = v2_add(other->t.p.xy,
+                                 v2_mul_s(unit, overlap*-0.5f));
+          
+          {
+            v2 force = v2_project(entity->dp.xy, unit);
+            other_new_dp.xy = v2_add(other_new_dp.xy, force);
+            entity_new_dp.xy = v2_add(entity_new_dp.xy, 
+                                      v2_mul_s(force, -1));
+          }
+          {
+            v2 force = v2_project(other->dp.xy, unit);
+            entity_new_dp.xy = v2_add(entity_new_dp.xy, force);
+            other_new_dp.xy = v2_add(other_new_dp.xy, 
+                                     v2_mul_s(force, -1));
+          }
+          
+          other->dp = other_new_dp;
+          entity->dp = entity_new_dp;
+        }
+      }
+    }
+    
+    if (debug_get_var_i32(Debug_Var_Name_COLLIDERS)) {
+      render_save(group);
+      render_transform(group, entity->t);
+      render_color(group, V4(1, 0, 0, 1));
+      if (entity->box_collider.active) {
+        push_rect_outline(group, entity->box_collider.rect, 0.02f);
+      }
+      if (entity->circle_collider.active) {
+        push_sprite(group, state->spr_circle, transform_default());
+      }
+      render_restore(group);
+    }
+    
+    if (do_bop) {
+      Playing_Sound *snd = sound_play(&state->sound_state, &state->snd_bop, Sound_Type_EFFECTS);
+      snd->speed = random_range(&state->rand, 0.95f, 1.08f);
+    }
   }
+  
+  
+  if (state->selected_entity) {
+    Entity *e = get_entity(state, state->selected_entity);
+    if (e->is_active) {
+      v2 begin_p = e->t.p.xy;
+      push_line(group, begin_p, mouse_meters, 0.03f);
+      
+      if (input->mouse.left.went_up) {
+        e->dp = v3_mul_s(v3_sub(v2_to_v3(mouse_meters, 0), e->t.p), 5);
+        state->selected_entity = 0;
+      }
+    }
+  }
+  
   DEBUG_SECTION_END(_entities);
   
   

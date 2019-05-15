@@ -35,6 +35,7 @@ i32 min_i32(i32 a, i32 min) {
 }
 
 
+
 i32 clip_i32(i32 a, i32 min, i32 max) {
   i32 result = max_i32(min_i32(a, max), min);
   return result;
@@ -60,8 +61,23 @@ f32 cos_f32(f32 a) {
   return result;
 }
 
+f32 sqrt_f32(f32 a) {
+  f32 result = sqrtf(a);
+  return result;
+}
+
+f32 sqr_f32(f32 a) {
+  f32 result = a*a;
+  return result;
+}
+
 i16 abs_i16(i16 a) {
   i16 result = a > 0 ? a : -a;
+  return result;
+}
+
+f32 atan2_f32(f32 y, f32 x) {
+  f32 result = atan2f(y, x);
   return result;
 }
 
@@ -159,6 +175,27 @@ v2 v2_i(i32 x, i32 y) {
 
 v2 v2_perp(v2 a) {
   v2 result = V2(-a.y, a.x);
+  return result;
+}
+
+f32 v2_length_sqr(v2 a) {
+  f32 result = sqr_f32(a.x) + sqr_f32(a.y);
+  return result;
+}
+
+f32 v2_length(v2 a) {
+  f32 result = sqrt_f32(v2_length_sqr(a));
+  return result;
+}
+
+v2 v2_unit(v2 a) {
+  v2 result = v2_div_s(a, v2_length(a));
+  return result;
+}
+
+v2 v2_project(v2 a, v2 b) {
+  f32 dot = v2_dot(a, b);
+  v2 result = v2_mul_s(b, v2_dot(a, b)/v2_length_sqr(b));
   return result;
 }
 
@@ -778,6 +815,16 @@ v4 lerp_v4(v4 a, v4 b, v4 c) {
 }
 
 
+// NOTE(lvl5): misc
+b32 point_in_circle(v2 point, v2 origin, f32 radius) {
+  b32 result = false;
+  
+  f32 dist = v2_length(v2_sub(point, origin));
+  if (dist < radius) {
+    result = true;
+  }
+  return result;
+}
 
 #define LVL5_MATH
 #endif

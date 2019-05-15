@@ -6,10 +6,12 @@ patterns = {
 	"*.cpp",
 	"*.h",
 	"*.4coder",
+	"*.glsl",
 };
 
 load_paths = {
-	{ { { "code", .recursive = false } },  .os = "win" },
+	{ { { "code", .recursive = true } },  .os = "win" },
+	{ { { "data/shaders", .recursive = false } },  .os = "win" },
 };
 
 command_list = {
@@ -22,14 +24,13 @@ command_list = {
 		.cmd = { { "build.bat", .os = "win" } },
 	},
 	{
-		.name = "run",
-		.out = "*run*",
-		.footer_panel = false,
+		.name = "build_fast",
+		.out = "*compilation*",
+		.footer_panel = true,
 		.save_dirty_files = true,
 		.cursor_at_end = false,
-		.cmd = { { "build.bat && build\\win32_main.exe", .os = "win" } },
-	}
+		.cmd = { { "build.bat", .os = "win" } },
+	},
 };
 
 fkey_command[5] = "build";
-fkey_command[9] = "run";

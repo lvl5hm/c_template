@@ -106,6 +106,29 @@ void push_rect(Render_Group *group, rect2 rect) {
   render_restore(group);
 }
 
+
+void push_line(Render_Group *group, v2 start, v2 end, f32 thick) {
+  v2 diff = v2_sub(end, start);
+  f32 angle = atan2_f32(diff.y, diff.x);
+  f32 width = v2_length(diff);
+  render_save(group);
+  render_translate(group, v2_to_v3(start, 0));
+  render_rotate(group, angle);
+  push_rect(group, rect2_min_size(V2(0, -thick*0.5f), V2(width, thick)));
+  render_restore(group);
+}
+
+void push_rect_outline(Render_Group *group, rect2 rect, f32 thick) {
+  push_rect(group, rect2_min_max(rect.min,
+                                 V2(rect.min.x+thick, rect.max.y)));
+  push_rect(group, rect2_min_max(V2(rect.min.x, rect.max.y-thick),
+                                 rect.max));
+  push_rect(group, rect2_min_max(rect.min,
+                                 V2(rect.max.x, rect.min.y+thick)));
+  push_rect(group, rect2_min_max(V2(rect.max.x-thick, rect.min.y),
+                                 rect.max));
+}
+
 void push_text(Render_Group *group, String text) {
   DEBUG_FUNCTION_BEGIN();
   

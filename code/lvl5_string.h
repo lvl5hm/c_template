@@ -11,6 +11,20 @@ typedef struct {
   u32 count;
 } String;
 
+typedef struct Builder_Buffer Builder_Buffer;
+
+struct Builder_Buffer {
+  char *data;
+  u32 count;
+  u32 capacity;
+  Builder_Buffer *next;
+};
+
+typedef struct {
+  Builder_Buffer *first;
+  Builder_Buffer *last;
+} String_Builder;
+
 #define const_string(const_char) make_string(const_char, array_count(const_char)-1)
 
 String make_string(char *data, u32 count) {

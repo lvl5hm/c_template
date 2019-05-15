@@ -15,14 +15,6 @@ typedef enum {
 
 
 typedef struct {
-  i32 index;
-  Entity_Type type;
-  b32 is_active;
-  Transform t;
-} Entity;
-
-
-typedef struct {
   f32 position;  // 0 - 1
   Transform t;
   v4 color;
@@ -33,7 +25,6 @@ typedef struct {
   Animation_Frame *frames;
   i32 frame_count;
 } Animation;
-
 
 typedef enum {
   Robot_Animation_IDLE,
@@ -62,37 +53,69 @@ typedef struct {
   f32 *positions;
 } Animation_Instance;
 
+// TODO(lvl5): should every entity part be an entity?
+// every entity has a collider, when it animates, the collider moves with it
+
+typedef struct {
+  f32 r;
+  v2 origin;
+  b32 active;
+} Circle_Collider;
+
+typedef struct {
+  rect2 rect;
+  b32 active;
+} Box_Collider;
+
+typedef struct {
+  i32 index;
+  Entity_Type type;
+  b32 is_active;
+  Transform t;
+  v3 dp;
+  
+  Box_Collider box_collider;
+  Circle_Collider circle_collider;
+} Entity;
+
+
+#define MAX_ENTITY_COUNT 10000
+
 typedef struct {
   Input empty_input;
   Sound test_sound;
+  Sound snd_bop;
+  
   Sound_State sound_state;
   b32 is_initialized;
   Arena arena;
   Arena scratch;
   Arena temp;
   
-  Entity entities[40000];
+  Entity entities[MAX_ENTITY_COUNT];
   i32 entity_count;
   
-  GLuint shader_basic;
+  i32 entities_free_list[MAX_ENTITY_COUNT];
+  i32 entities_free_count;
   
+  GLuint shader_basic;
   Texture_Atlas atlas;
   Quad_Renderer renderer;
-  
   
   Font font;
   Texture_Atlas debug_atlas;
   
+  Sprite spr_circle;
   Sprite spr_robot_torso;
   Sprite spr_robot_leg;
   Sprite spr_robot_eye;
-  
   Animation_Pack robot_parts[Robot_Part_COUNT];
   Animation_Instance robot_anim;
   
   Rand rand;
-  
   u32 frame_count;
+  
+  i32 selected_entity;
 } State;
 
 
