@@ -16,6 +16,9 @@
 /*
 TODO:
 
+there probably is some memory corruption bug that sometimes sets 
+audio_state.sound_count to 64
+
 ---- ENGINE ----
 
 [ ] multithreading
@@ -70,7 +73,7 @@ TODO:
  -[ ] splitting bit sounds into chunks?
  
  [ ] sounds
- -[ ] playing sounds space relative
+ 
  -[x] basic mixer
  -[x] volume
  -[x] speed shifting
@@ -427,8 +430,8 @@ extern GAME_UPDATE(game_update) {
                                  const_string("sounds/durarara.wav"));
     state->snd_bop = load_wav(&state->temp, const_string("sounds/bop.wav"));
     
-    //Playing_Sound *snd = sound_play(&state->sound_state, 
-    //&state->test_sound, Sound_Type_MUSIC);
+    Playing_Sound *snd = sound_play(&state->sound_state, 
+                                    &state->test_sound, Sound_Type_MUSIC);
     
     debug_add_arena(&state->arena, const_string("main"));
     debug_add_arena(&state->temp, const_string("temp"));
@@ -519,6 +522,12 @@ extern GAME_UPDATE(game_update) {
   }
   
   
+#if 0
+  if (state->frame_count % 60 == 0) {
+    sound_play(&state->sound_state, &state->snd_bop, Sound_Type_EFFECTS);
+  }
+#endif
+  
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group _group;
   Render_Group *group = &_group;
@@ -556,7 +565,6 @@ extern GAME_UPDATE(game_update) {
     }
     
     
-    
     entity->t.p = v3_add(entity->t.p, v3_mul_s(entity->dp, dt));
     f32 FRICTION = 0.5f*dt;
     entity->dp = v3_mul_s(entity->dp, 1 - FRICTION);
@@ -586,46 +594,46 @@ extern GAME_UPDATE(game_update) {
       state->selected_entity = entity_index;
     }
     
-    for (i32 other_index = 1; other_index < state->entity_count; other_index++) {
+    Entity *bopped = 0;
+    for (i32 other_index = entity_index+1; other_index < state->entity_count; other_index++) {
+      DEBUG_SECTION_BEGIN(_resolve_collision);
       Entity *other = get_entity(state, other_index);
-      if (other != entity) {
-        f32 radius_sum = entity->circle_collider.r*entity->t.scale.x + other->circle_collider.r*other->t.scale.x;
-        v2 diff = v2_sub(other->t.p.xy, entity->t.p.xy);
-        f32 dist = v2_length(diff);
-        
-        if (dist < radius_sum) {
-          if (entity->dp.x || entity->dp.y || other->dp.x || other->dp.y) {
-            do_bop = true;
-          }
-          
-          // NOTE(lvl5): collision happened
-          v3 entity_new_dp = entity->dp;
-          v3 other_new_dp = other->dp;
-          v2 unit = v2_unit(diff);
-          
-          f32 overlap = dist - radius_sum;
-          entity->t.p.xy = v2_add(entity->t.p.xy,
-                                  v2_mul_s(unit, overlap*0.5f));
-          other->t.p.xy = v2_add(other->t.p.xy,
-                                 v2_mul_s(unit, overlap*-0.5f));
-          
-          {
-            v2 force = v2_project(entity->dp.xy, unit);
-            other_new_dp.xy = v2_add(other_new_dp.xy, force);
-            entity_new_dp.xy = v2_add(entity_new_dp.xy, 
-                                      v2_mul_s(force, -1));
-          }
-          {
-            v2 force = v2_project(other->dp.xy, unit);
-            entity_new_dp.xy = v2_add(entity_new_dp.xy, force);
-            other_new_dp.xy = v2_add(other_new_dp.xy, 
-                                     v2_mul_s(force, -1));
-          }
-          
-          other->dp = other_new_dp;
-          entity->dp = entity_new_dp;
+      
+      f32 radius_sum = entity->circle_collider.r*entity->t.scale.x + other->circle_collider.r*other->t.scale.x;
+      v2 diff = v2_sub(other->t.p.xy, entity->t.p.xy);
+      f32 dist = v2_length(diff);
+      
+      if (dist < radius_sum) {
+        if (entity->dp.x || entity->dp.y || other->dp.x || other->dp.y) {
+          do_bop = true;
+          bopped = other;
         }
+        
+        // NOTE(lvl5): collision happened
+        v3 entity_new_dp = entity->dp;
+        v3 other_new_dp = other->dp;
+        v2 unit = v2_unit(diff);
+        
+        f32 overlap = dist - radius_sum;
+        entity->t.p.xy = v2_add(entity->t.p.xy, v2_mul_s(unit, overlap));
+        
+        {
+          v2 force = v2_project(entity->dp.xy, unit);
+          other_new_dp.xy = v2_add(other_new_dp.xy, force);
+          entity_new_dp.xy = v2_add(entity_new_dp.xy, 
+                                    v2_mul_s(force, -1));
+        }
+        {
+          v2 force = v2_project(other->dp.xy, unit);
+          entity_new_dp.xy = v2_add(entity_new_dp.xy, force);
+          other_new_dp.xy = v2_add(other_new_dp.xy, 
+                                   v2_mul_s(force, -1));
+        }
+        
+        other->dp = other_new_dp;
+        entity->dp = entity_new_dp;
       }
+      DEBUG_SECTION_END(_resolve_collision);
     }
     
     if (debug_get_var_i32(Debug_Var_Name_COLLIDERS)) {
@@ -643,7 +651,16 @@ extern GAME_UPDATE(game_update) {
     
     if (do_bop) {
       Playing_Sound *snd = sound_play(&state->sound_state, &state->snd_bop, Sound_Type_EFFECTS);
-      snd->speed = random_range(&state->rand, 0.95f, 1.08f);
+#define MAX_BALL_SPEED 20
+      f32 speed = v2_length(entity->dp.xy);
+      if (bopped) {
+        f32 other_speed = v2_length(bopped->dp.xy);
+        if (other_speed > speed) speed = other_speed;
+      }
+      
+      f32 volume = speed/MAX_BALL_SPEED;
+      sound_set_volume(snd, V2(volume, volume), 0);
+      //snd->speed = random_range(&state->rand, 0.95f, 1.08f);
     }
   }
   

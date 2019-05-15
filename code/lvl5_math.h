@@ -95,6 +95,11 @@ i32 sign_i32(i32 a) {
   return result;
 }
 
+f32 abs_f32(f32 a) {
+  f32 result = a > 0 ? a : -a;
+  return result;
+}
+
 i32 round_f32_i32(f32 a) {
   i32 result = (i32)roundf(a);
   return result;

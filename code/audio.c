@@ -62,7 +62,6 @@ Sound load_wav(Arena *arena, String file_name) {
 #define PADDING 128
   result.samples[0] = (i16 *)_arena_push_memory(arena, sizeof(i16)*result.count + PADDING, 32);
   result.samples[1] = (i16 *)_arena_push_memory(arena, sizeof(i16)*result.count + PADDING, 32);
-  zero_memory_slow(result.samples[0], arena->data + arena->size - (byte *)result.samples[0]);
   
   i16 *interleaved_samples = (i16 *)(data_chunk + 1);
   for (u32 sample_index = 0; sample_index < result.count; sample_index++) {
@@ -96,7 +95,11 @@ Playing_Sound *sound_play(Sound_State *sound_state, Sound *wav, Sound_Type type)
 
 void sound_set_volume(Playing_Sound *snd, v2 target_volume, f32 seconds) {
   snd->target_volume = target_volume;
-  snd->volume_change_per_second = v2_div_s(v2_sub(target_volume, snd->volume), seconds);
+  if (seconds) {
+    snd->volume_change_per_second = v2_div_s(v2_sub(target_volume, snd->volume), seconds);
+  } else {
+    snd->volume = snd->target_volume;
+  }
 }
 
 void sound_stop(Sound_State *state, i32 sound_index) {
@@ -105,6 +108,23 @@ void sound_stop(Sound_State *state, i32 sound_index) {
   *removed = *last;
   state->sound_count--;
 }
+
+#if 1
+
+i32 sine_wave_sample_index = 0;
+
+void write_sine_wave(Sound_Buffer *sound_buffer, f32 dt) {
+  for (i32 sample_index = 0; sample_index < sound_buffer->count; sample_index++) {
+    i16 sample = (i16)(sinf((f32)sine_wave_sample_index*0.03f)*32767);
+    sound_buffer->samples[sample_index*2] = sample;
+    sound_buffer->samples[sample_index*2+1] = sample;
+    sine_wave_sample_index++;
+  }
+  
+  sine_wave_sample_index -= sound_buffer->overwrite_count;
+}
+#endif
+
 
 void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
                               Arena *temp, f32 dt) {
@@ -130,13 +150,15 @@ void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
     DEBUG_SECTION_BEGIN(_mix_single_sound);
     Playing_Sound *snd = sound_state->sounds + sound_index;
     Sound *wav = snd->wav;
-    assert(wav->count % 8 == 0);
+    //assert(wav->count % 8 == 0);
     
     i32 samples_to_mix = dst->count;
     i32 samples_left_in_sound = round_f32_i32((wav->count - snd->position)/snd->speed);
     if (samples_left_in_sound < samples_to_mix) {
       samples_to_mix = samples_left_in_sound;
     }
+    
+    assert(samples_to_mix > 0);
     
     v2 volume_change_per_frame = v2_mul_s(v2_sub(snd->target_volume, snd->volume), dt);
     v2 volume_change_per_sample = v2_div_s(volume_change_per_frame, (f32)samples_to_mix);
@@ -159,6 +181,7 @@ void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
                                            (f32)sample_index+2,
                                            (f32)sample_index+3);
       __m128 pos = _mm_add_ps(initial_pos_4, _mm_mul_ps(sample_index_ps, speed_4));
+      
       __m128i src_index = _mm_cvtps_epi32(pos);
       
       __m128 volume_l = _mm_add_ps(initial_volume_l_4, 
@@ -196,6 +219,7 @@ void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
     
     if (samples_to_mix == samples_left_in_sound) {
       sound_stop(sound_state, sound_index);
+      sound_index--;
     }
     DEBUG_SECTION_END(_mix_single_sound);
   }

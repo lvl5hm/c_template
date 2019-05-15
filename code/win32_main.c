@@ -465,12 +465,12 @@ void win32_fill_audio_buffer(win32_Sound *win32_sound, Sound_Buffer *src_buffer)
     win32_sound->current_sample_index++;
   }
   
+  win32_sound->current_sample_index -= src_buffer->overwrite_count;
+  
   assert(src == src_buffer->samples + src_buffer->count*2);
   
   HRESULT is_unlocked = IDirectSoundBuffer_Unlock(win32_sound->direct_buffer, first_region, first_bytes, second_region, second_bytes);
   assert(is_unlocked == DS_OK);
-  
-  win32_sound->current_sample_index -= src_buffer->overwrite_count;
 }
 
 
