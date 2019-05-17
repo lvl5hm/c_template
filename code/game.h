@@ -11,6 +11,7 @@ typedef enum {
   Entity_Type_NONE,
   Entity_Type_PLAYER,
   Entity_Type_ENEMY,
+  Entity_Type_BOX,
 } Entity_Type;
 
 
@@ -73,6 +74,7 @@ typedef struct {
   b32 is_active;
   Transform t;
   v3 dp;
+  f32 d_angle;
   
   Box_Collider box_collider;
   Circle_Collider circle_collider;
@@ -116,6 +118,7 @@ typedef struct {
   u32 frame_count;
   
   i32 selected_entity;
+  v2 start_p;
 } State;
 
 

@@ -198,9 +198,17 @@ v2 v2_unit(v2 a) {
   return result;
 }
 
+f32 v2_project_s(v2 a, v2 b) {
+  f32 len = v2_length(b);
+  assert(len);
+  f32 result = v2_dot(a, b)/len;
+  return result;
+}
+
 v2 v2_project(v2 a, v2 b) {
-  f32 dot = v2_dot(a, b);
-  v2 result = v2_mul_s(b, v2_dot(a, b)/v2_length_sqr(b));
+  f32 len_sqr = v2_length_sqr(b);
+  assert(len_sqr);
+  v2 result = v2_mul_s(b, v2_dot(a, b)/len_sqr);
   return result;
 }
 

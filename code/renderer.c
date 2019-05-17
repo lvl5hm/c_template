@@ -118,6 +118,13 @@ void push_line(Render_Group *group, v2 start, v2 end, f32 thick) {
   render_restore(group);
 }
 
+void push_line_color(Render_Group *group, v2 start, v2 end, f32 thick, v4 color) {
+  render_save(group);
+  render_color(group, color);
+  push_line(group, start, end, thick);
+  render_restore(group);
+}
+
 void push_rect_outline(Render_Group *group, rect2 rect, f32 thick) {
   push_rect(group, rect2_min_max(rect.min,
                                  V2(rect.min.x+thick, rect.max.y)));

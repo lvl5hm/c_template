@@ -73,7 +73,6 @@ audio_state.sound_count to 64
  -[ ] splitting bit sounds into chunks?
  
  [ ] sounds
- 
  -[x] basic mixer
  -[x] volume
  -[x] speed shifting
@@ -149,6 +148,15 @@ Entity *add_entity_player(State *state) {
   Entity *e = add_entity(state, Entity_Type_PLAYER);
   e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
   e->box_collider.active = true;
+  
+  return e;
+}
+
+Entity *add_entity_box(State *state) {
+  Entity *e = add_entity(state, Entity_Type_BOX);
+  e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
+  e->box_collider.active = true;
+  e->t.scale = V3(0.3f, 0.3f, 1);
   
   return e;
 }
@@ -313,10 +321,6 @@ Sprite make_sprite(Texture_Atlas *atlas, i32 index, v2 origin) {
 }
 
 
-void add_force(Entity *e, v2 force) {
-  e->dp = v3_add(v2_to_v3(force, 0), e->dp);
-}
-
 b32 collide_aabb_aabb(rect2 a, rect2 b) {
   b32 result = !(a.max.x < b.min.x ||
                  a.max.y < b.min.y ||
@@ -347,64 +351,128 @@ Rect_Polygon aabb_transform(rect2 box, Transform t) {
   return result;
 }
 
-b32 collide_box_box(rect2 a_rect, Transform a_t, rect2 b_rect, Transform b_t) {
+#define INVALID_V2 V2(INFINITY, INFINITY)
+b32 v2_is_valid(v2 a) {
+  b32 result = a.x != INVALID_V2.x ||
+    a.y != INVALID_V2.y;
+  return result;
+}
+
+
+b32 _test_normal(Rect_Polygon a, Rect_Polygon b, 
+                 i32 index_0, i32 index_1,
+                 f32 *min_intersect, v2 *intersect_vertex, v2 *res_normal) {
+  v2 normal = v2_sub(a.v[index_0], a.v[index_1]);
+  
+  f32 dot_a_0 = v2_dot(a.v[index_0], normal);
+  f32 dot_a_1 = v2_dot(a.v[index_1], normal);
+  f32 a_min, a_max;
+  if (dot_a_0 > dot_a_1) {
+    a_min = dot_a_1;
+    a_max = dot_a_0;
+  } else {
+    a_min = dot_a_0;
+    a_max = dot_a_1;
+  }
+  
+  b32 result = false;
+  
+  f32 b_min = INFINITY;
+  f32 b_max = -INFINITY;
+  v2 min_vertex = {0}, max_vertex = {0};
+  
+  for (i32 vertex_index = 0; vertex_index < 4; vertex_index++) {
+    v2 vertex = b.v[vertex_index];
+    f32 dot = v2_dot(vertex, normal);
+    if (dot < b_min) {
+      b_min = dot;
+      min_vertex = vertex;
+    }
+    if (dot > b_max) {
+      b_max = dot;
+      max_vertex = vertex;
+    }
+  }
+  
+  if (b_min > a_max || b_max < a_min) {
+    return false;
+  }
+  
+  f32 intersect = b_min - a_max;
+  if (intersect > *min_intersect) {
+    *min_intersect = intersect;
+    *intersect_vertex = min_vertex;
+    *res_normal = normal;
+  }
+  intersect = a_min - b_max;
+  if (intersect > *min_intersect) {
+    *min_intersect = intersect;
+    *intersect_vertex = max_vertex;
+    *res_normal = normal;
+  }
+  result = true;
+  
+  return result;
+}
+
+
+typedef struct {
+  v2 point;
+  v2 normal;
+  v2 intersect;
+  b32 success;
+} Collision;
+
+Collision collide_box_box(rect2 a_rect, Transform a_t, rect2 b_rect, Transform b_t) {
   DEBUG_FUNCTION_BEGIN();
   Rect_Polygon a = aabb_transform(a_rect, a_t);
   Rect_Polygon b = aabb_transform(b_rect, b_t);
   
-  v2 normals[4];
-  normals[0] = v2_sub(a.v[1], a.v[0]);
-  normals[1] = v2_sub(a.v[2], a.v[1]);
-  normals[2] = v2_sub(b.v[1], b.v[0]);
-  normals[3] = v2_sub(b.v[2], b.v[1]);
+  f32 min_intersect = -INFINITY;
   
-  b32 result = true;
+  Collision result;
+  result.success = false;
+  result.point = INVALID_V2;
+  result.success = _test_normal(a, b, 1, 0, &min_intersect, &result.point, &result.normal);
+  if (!result.success) return result;
   
-  for (i32 normal_index = 0; normal_index < 4; normal_index++) {
-    v2 n = normals[normal_index];
-    
-    Range a_range = inverted_infinity_range();
-    Range b_range = inverted_infinity_range();
-    
-    for (i32 vertex_index = 0; vertex_index < 4; vertex_index++) {
-      {
-        v2 vertex = a.v[vertex_index];
-        f32 dot = v2_dot(vertex, n);
-        if (dot < a_range.min) {
-          a_range.min = dot;
-        }
-        if (dot > a_range.max) {
-          a_range.max = dot;
-        }
-      }
-      
-      {
-        v2 vertex = b.v[vertex_index];
-        f32 dot = v2_dot(vertex, n);
-        if (dot < b_range.min) {
-          b_range.min = dot;
-        }
-        if (dot > b_range.max) {
-          b_range.max = dot;
-        }
-      }
-    }
-    
-    if (a_range.max < b_range.min || a_range.min > b_range.max) {
-      result = false;
-      break;
-    }
-  }
+  result.success = _test_normal(a, b, 2, 1, &min_intersect, &result.point, &result.normal);
+  if (!result.success) return result;
+  
+  result.success = _test_normal(b, a, 1, 0, &min_intersect, &result.point, &result.normal);
+  if (!result.success) return result;
+  
+  result.success = _test_normal(b, a, 2, 1, &min_intersect, &result.point, &result.normal);
+  if (!result.success) return result;
   
   DEBUG_FUNCTION_END();
+  result.success = true;
+  result.intersect = v2_mul_s(v2_unit(result.normal), min_intersect);
   return result;
 }
 
 #define SCRATCH_SIZE kilobytes(32)
 
-extern GAME_UPDATE(game_update) {
-  dt *= 0.3f;
+typedef struct {
+  v3 dp;
+  f32 d_angle;
+} Velocity;
+
+Velocity get_force(Transform t, v2 force_p, v2 force) {
+  v2 p = v2_sub(force_p, t.p.xy);
+  v2 center_axis = p;
+  v2 center_normal = v2_perp(center_axis);
   
+  v2 dp_add = v2_project(force, center_axis);
+  f32 d_angle_add = v2_project_s(force, center_normal);
+  
+  Velocity result;
+  result.dp = v2_to_v3(dp_add, 0);
+  result.d_angle = d_angle_add;
+  return result;
+}
+
+extern GAME_UPDATE(game_update) {
   State *state = (State *)memory.perm;
   debug_state = (Debug_State *)memory.debug;
   Arena *arena = &state->arena;
@@ -430,8 +498,7 @@ extern GAME_UPDATE(game_update) {
                                  const_string("sounds/durarara.wav"));
     state->snd_bop = load_wav(&state->temp, const_string("sounds/bop.wav"));
     
-    Playing_Sound *snd = sound_play(&state->sound_state, 
-                                    &state->test_sound, Sound_Type_MUSIC);
+    //Playing_Sound *snd = sound_play(&state->sound_state, &state->test_sound, Sound_Type_MUSIC);
     
     debug_add_arena(&state->arena, const_string("main"));
     debug_add_arena(&state->temp, const_string("temp"));
@@ -479,6 +546,17 @@ extern GAME_UPDATE(game_update) {
     add_entity(state, Entity_Type_NONE); // filler entity
     //add_entity_player(state);
     
+    add_entity_box(state);
+    
+    for (i32 i = 0; i < 10; i++) {
+      Entity *e = add_entity_box(state);
+      e->t.p.x = random_range(&state->rand, -5, 5);
+      e->t.p.y = random_range(&state->rand, -3, 3);
+    }
+    
+    
+    
+#if 0    
     f32 radius = 0.15f;
     i32 row_length = 5;
     f32 start_x = -radius*row_length + radius;
@@ -503,6 +581,7 @@ extern GAME_UPDATE(game_update) {
       enemy->t.p.x = 0.0f;
       enemy->t.p.y = -2.0f;
     }
+#endif
     
 #include "robot_animation.h"
     
@@ -541,99 +620,179 @@ extern GAME_UPDATE(game_update) {
     Entity *entity = get_entity(state, entity_index);
     
     switch (entity->type) {
+      case Entity_Type_BOX: {
+        //mat4x4 m = transform_apply(mat4x4_identity(), entity->t);
+        //v2 mouse_p = mat4x4_mul_v4(m, v2_to_v4(mouse_meters, 0, 0)).xy;
+        
+#if 0        
+        if (entity->index == 2) {
+          entity->t.p = v2_to_v3(mouse_meters, 0);
+          if (input->start.is_down) {
+            entity->t.angle += 0.1f;
+          }
+          
+          
+        }
+#endif
+        if (entity_index == 1 && input->mouse.left.went_down) {
+          state->selected_entity = entity_index;
+          state->start_p = v2_sub(mouse_meters, entity->t.p.xy);
+        }
+        
+        
+        for (i32 other_index = entity_index+1; other_index < state->entity_count; other_index++) {
+          Entity *other = get_entity(state, other_index);
+          
+          Collision collision = collide_box_box(entity->box_collider.rect,
+                                                entity->t,
+                                                other->box_collider.rect,
+                                                other->t);
+          if (collision.success) {
+            push_rect(group, rect2_center_size(collision.point, V2(0.1f, 0.1f)));
+            v2 axis = collision.normal;
+            Velocity e_ch = {0};
+            Velocity o_ch = {0};
+            {
+              v2 r = v2_sub(collision.point, entity->t.p.xy);
+              v2 rot_vel = v2_mul_s(v2_perp(r), entity->d_angle);
+              v2 total_vel = v2_add(entity->dp.xy, rot_vel);
+              
+              v2 force = v2_project(total_vel, axis);
+              Velocity o_vel = get_force(other->t, collision.point, force);
+              Velocity e_vel = get_force(entity->t, collision.point, v2_mul_s(force, -1));
+              
+              e_ch.dp = v3_add(e_ch.dp, e_vel.dp);
+              e_ch.d_angle += e_vel.d_angle;
+              o_ch.dp = v3_add(o_ch.dp, o_vel.dp);
+              o_ch.d_angle += o_vel.d_angle;
+              //entity->t.p = v3_add(entity->t.p, v2_to_v3(collision.intersect, 0));
+            }
+            {
+              v2 r = v2_sub(collision.point, other->t.p.xy);
+              v2 rot_vel = v2_mul_s(v2_perp(r), other->d_angle);
+              v2 total_vel = v2_add(other->dp.xy, rot_vel);
+              
+              v2 force = v2_project(total_vel, axis);
+              Velocity o_vel = get_force(entity->t, collision.point, force);
+              Velocity e_vel = get_force(other->t, collision.point, v2_mul_s(force, -1));
+              
+              e_ch.dp = v3_add(e_ch.dp, e_vel.dp);
+              e_ch.d_angle += e_vel.d_angle;
+              o_ch.dp = v3_add(o_ch.dp, o_vel.dp);
+              o_ch.d_angle += o_vel.d_angle;
+            }
+            
+            entity->dp = v3_add(e_ch.dp, entity->dp);
+            entity->d_angle += e_ch.d_angle;
+            
+            other->dp = v3_add(o_ch.dp, other->dp);
+            other->d_angle += o_ch.d_angle;
+          }
+        }
+        
+        entity->t.p = v3_add(entity->t.p, v3_mul_s(entity->dp, dt));
+        entity->t.angle += entity->d_angle*dt;
+      } break;
+      
       case Entity_Type_ENEMY: {
         
-      } break;
-      case Entity_Type_PLAYER: {
-#if 0
-        i32 h_speed = (input->move_right.is_down - 
-                       input->move_left.is_down);
-        i32 v_speed = (input->move_up.is_down - 
-                       input->move_down.is_down);
+        f32 FRICTION = 0.5f*dt;
+        entity->dp = v3_mul_s(entity->dp, 1 - FRICTION);
+        f32 r = entity->circle_collider.r*entity->t.scale.x;
         
-        entity->dp = v2_to_v3(v2_mul_s(v2_i(h_speed, v_speed), 0.01f), 0);
-        entity->t.p = v3_add(entity->t.p, entity->dp);
+        b32 do_bop = false;
         
-        render_save(group);
-        render_transform(group, entity->t);
         
-        //draw_robot(state, group);
+        if (input->mouse.left.went_down && point_in_circle(mouse_meters, entity->t.p.xy, r)) {
+          state->selected_entity = entity_index;
+        }
         
-        render_restore(group);
+        Entity *bopped = 0;
+        for (i32 other_index = entity_index+1; other_index < state->entity_count; other_index++) {
+          DEBUG_SECTION_BEGIN(_resolve_collision);
+          Entity *other = get_entity(state, other_index);
+          if (other->type != Entity_Type_ENEMY) continue;
+          
+          f32 radius_sum = entity->circle_collider.r*entity->t.scale.x + other->circle_collider.r*other->t.scale.x;
+          v2 diff = v2_sub(other->t.p.xy, entity->t.p.xy);
+          f32 dist = v2_length(diff);
+          
+          if (dist < radius_sum) {
+            do_bop = true;
+            bopped = other;
+            
+            // NOTE(lvl5): collision happened
+            v3 entity_new_dp = entity->dp;
+            v3 other_new_dp = other->dp;
+            v2 unit = v2_unit(diff);
+            
+            f32 overlap = dist - radius_sum;
+            entity->t.p.xy = v2_add(entity->t.p.xy, v2_mul_s(unit, overlap));
+            
+            {
+              v2 force = v2_project(entity->dp.xy, unit);
+              other_new_dp.xy = v2_add(other_new_dp.xy, force);
+              entity_new_dp.xy = v2_add(entity_new_dp.xy, 
+                                        v2_mul_s(force, -1));
+            }
+            {
+              v2 force = v2_project(other->dp.xy, unit);
+              entity_new_dp.xy = v2_add(entity_new_dp.xy, force);
+              other_new_dp.xy = v2_add(other_new_dp.xy, 
+                                       v2_mul_s(force, -1));
+            }
+            
+            other->dp = other_new_dp;
+            entity->dp = entity_new_dp;
+          }
+          DEBUG_SECTION_END(_resolve_collision);
+        }
+        
+#define BOUNCE_C -0.7f
+        if (entity->t.p.x + r > half_screen_meters.x) {
+          entity->dp.x *= BOUNCE_C;
+          entity->t.p.x = half_screen_meters.x-r;
+          do_bop = true;
+        }
+        if (entity->t.p.x - r < -half_screen_meters.x) {
+          entity->dp.x *= BOUNCE_C;
+          entity->t.p.x = -half_screen_meters.x+r;
+          do_bop = true;
+        }
+        
+        if (entity->t.p.y + r > half_screen_meters.y) {
+          entity->dp.y *= BOUNCE_C;
+          entity->t.p.y = half_screen_meters.y-r;
+          do_bop = true;
+        }
+        if (entity->t.p.y - r < -half_screen_meters.y) {
+          entity->dp.y *= BOUNCE_C;
+          entity->t.p.y = -half_screen_meters.y+r;
+          do_bop = true;
+        }
+        
+        entity->t.p = v3_add(entity->t.p, v3_mul_s(entity->dp, dt));
+        entity->t.angle += entity->d_angle;
+        
+#if 1 
+        if (do_bop) {
+          Playing_Sound *snd = sound_play(&state->sound_state, &state->snd_bop, Sound_Type_EFFECTS);
+#define MAX_BALL_SPEED 20
+          v2 dp = entity->dp.xy;
+          if (bopped) {
+            dp = v2_add(bopped->dp.xy, dp);
+          }
+          
+          f32 speed = v2_length(dp);
+          f32 volume = speed/MAX_BALL_SPEED;
+          sound_set_volume(snd, V2(volume, volume), 0);
+          snd->speed = random_range(&state->rand, 0.95f, 1.08f);
+        }
 #endif
       } break;
-    }
-    
-    
-    entity->t.p = v3_add(entity->t.p, v3_mul_s(entity->dp, dt));
-    f32 FRICTION = 0.5f*dt;
-    entity->dp = v3_mul_s(entity->dp, 1 - FRICTION);
-    f32 r = entity->circle_collider.r*entity->t.scale.x;
-    
-    b32 do_bop = false;
-    
-    if (entity->t.p.x + r > half_screen_meters.x) {
-      entity->dp.x *= -1;
-      do_bop = true;
-    }
-    if (entity->t.p.x - r < -half_screen_meters.x) {
-      entity->dp.x *= -1;
-      do_bop = true;
-    }
-    
-    if (entity->t.p.y + r > half_screen_meters.y) {
-      entity->dp.y *= -1;
-      do_bop = true;
-    }
-    if (entity->t.p.y - r < -half_screen_meters.y) {
-      entity->dp.y *= -1;
-      do_bop = true;
-    }
-    
-    if (input->mouse.left.went_down && point_in_circle(mouse_meters, entity->t.p.xy, r)) {
-      state->selected_entity = entity_index;
-    }
-    
-    Entity *bopped = 0;
-    for (i32 other_index = entity_index+1; other_index < state->entity_count; other_index++) {
-      DEBUG_SECTION_BEGIN(_resolve_collision);
-      Entity *other = get_entity(state, other_index);
-      
-      f32 radius_sum = entity->circle_collider.r*entity->t.scale.x + other->circle_collider.r*other->t.scale.x;
-      v2 diff = v2_sub(other->t.p.xy, entity->t.p.xy);
-      f32 dist = v2_length(diff);
-      
-      if (dist < radius_sum) {
-        if (entity->dp.x || entity->dp.y || other->dp.x || other->dp.y) {
-          do_bop = true;
-          bopped = other;
-        }
+      case Entity_Type_PLAYER: {
         
-        // NOTE(lvl5): collision happened
-        v3 entity_new_dp = entity->dp;
-        v3 other_new_dp = other->dp;
-        v2 unit = v2_unit(diff);
-        
-        f32 overlap = dist - radius_sum;
-        entity->t.p.xy = v2_add(entity->t.p.xy, v2_mul_s(unit, overlap));
-        
-        {
-          v2 force = v2_project(entity->dp.xy, unit);
-          other_new_dp.xy = v2_add(other_new_dp.xy, force);
-          entity_new_dp.xy = v2_add(entity_new_dp.xy, 
-                                    v2_mul_s(force, -1));
-        }
-        {
-          v2 force = v2_project(other->dp.xy, unit);
-          entity_new_dp.xy = v2_add(entity_new_dp.xy, force);
-          other_new_dp.xy = v2_add(other_new_dp.xy, 
-                                   v2_mul_s(force, -1));
-        }
-        
-        other->dp = other_new_dp;
-        entity->dp = entity_new_dp;
-      }
-      DEBUG_SECTION_END(_resolve_collision);
+      } break;
     }
     
     if (debug_get_var_i32(Debug_Var_Name_COLLIDERS)) {
@@ -641,26 +800,12 @@ extern GAME_UPDATE(game_update) {
       render_transform(group, entity->t);
       render_color(group, V4(1, 0, 0, 1));
       if (entity->box_collider.active) {
-        push_rect_outline(group, entity->box_collider.rect, 0.02f);
+        push_rect_outline(group, entity->box_collider.rect, 0.04f);
       }
       if (entity->circle_collider.active) {
         push_sprite(group, state->spr_circle, transform_default());
       }
       render_restore(group);
-    }
-    
-    if (do_bop) {
-      Playing_Sound *snd = sound_play(&state->sound_state, &state->snd_bop, Sound_Type_EFFECTS);
-#define MAX_BALL_SPEED 20
-      f32 speed = v2_length(entity->dp.xy);
-      if (bopped) {
-        f32 other_speed = v2_length(bopped->dp.xy);
-        if (other_speed > speed) speed = other_speed;
-      }
-      
-      f32 volume = speed/MAX_BALL_SPEED;
-      sound_set_volume(snd, V2(volume, volume), 0);
-      //snd->speed = random_range(&state->rand, 0.95f, 1.08f);
     }
   }
   
@@ -668,11 +813,29 @@ extern GAME_UPDATE(game_update) {
   if (state->selected_entity) {
     Entity *e = get_entity(state, state->selected_entity);
     if (e->is_active) {
-      v2 begin_p = e->t.p.xy;
-      push_line(group, begin_p, mouse_meters, 0.03f);
+      v2 p = state->start_p;
+      v2 rel_p = v2_add(e->t.p.xy, p);
       
+      push_line(group, rel_p, mouse_meters, 0.03f);
+      
+      v2 force = v2_sub(mouse_meters, rel_p);
+      push_line(group, rel_p, mouse_meters, 0.05f);
+      
+      v2 center_axis = p;
+      v2 center_normal = v2_perp(center_axis);
+      v2 dp_add = v2_project(force, center_axis);
+      f32 d_angle_add = v2_project_s(force, center_normal);
+      
+      
+      push_line(group, rel_p, e->t.p.xy, 0.08f);
+      v2 d_angle_add_v = v2_project(force, center_normal);
+      push_line(group, rel_p, v2_add(rel_p, center_normal), 0.08f);
+      push_line_color(group, rel_p, v2_add(rel_p, dp_add), 0.01f, V4(0, 1, 0, 1));
+      push_line_color(group, rel_p, v2_add(rel_p, d_angle_add_v), 0.01f, V4(0, 0, 1, 1));
       if (input->mouse.left.went_up) {
-        e->dp = v3_mul_s(v3_sub(v2_to_v3(mouse_meters, 0), e->t.p), 5);
+        Velocity v = get_force(e->t, p, force);
+        e->dp = v3_add(v.dp, e->dp);
+        e->d_angle += v.d_angle;
         state->selected_entity = 0;
       }
     }

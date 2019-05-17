@@ -344,10 +344,12 @@ String win32_get_build_dir() {
 }
 
 String win32_get_work_dir() {
+#if 0
   String build_dir = win32_get_build_dir();
+#endif
   String path_end = const_string("..\\data\\");
   
-  String result = concat(&state.scratch, build_dir, path_end);
+  String result = path_end;// concat(&state.scratch, build_dir, path_end);
   return result;
 }
 
@@ -542,7 +544,7 @@ File_List win32_get_files_in_folder(String str) {
   result.files = sb_init(&state.arena, String, 8, true);
   
   WIN32_FIND_DATAA findData;
-  String wildcard = concat(&state.scratch, str, const_string("\\*.*"));
+  String wildcard = concat(&state.scratch, win32_get_work_dir(), concat(&state.scratch, str, const_string("\\*.*")));
   char *wildcard_c = to_c_string(&state.scratch, wildcard);
   HANDLE file = FindFirstFileA(wildcard_c, &findData);
   
@@ -559,9 +561,8 @@ File_List win32_get_files_in_folder(String str) {
       result.count++;
     }
     
-    b32 nextFileFound = FindNextFileA(file, &findData);
-    if (!nextFileFound)
-    {
+    b32 next_file_found = FindNextFileA(file, &findData);
+    if (!next_file_found) {
       break;
     }
   }
