@@ -445,8 +445,8 @@ void win32_fill_audio_buffer(win32_Sound *win32_sound, Sound_Buffer *src_buffer)
   DWORD second_bytes;
   
   HRESULT is_locked = IDirectSoundBuffer_Lock(win32_sound->direct_buffer, write_start, size_to_lock,
-                                              &first_region, &first_bytes,
-                                              &second_region, &second_bytes, null);
+                                              (LPVOID)&first_region, &first_bytes,
+                                              (LPVOID)&second_region, &second_bytes, null);
   assert(is_locked == DS_OK);
   
   i32 first_sample_count = first_bytes/multisample_size;

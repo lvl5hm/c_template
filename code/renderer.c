@@ -4,14 +4,14 @@
 #include "font.c"
 
 mat4x4 transform_apply(mat4x4 matrix, Transform t) {
-  DEBUG_FUNCTION_BEGIN();
+  //DEBUG_FUNCTION_BEGIN();
   
   mat4x4 result = matrix;
   result = mat4x4_translate(result, t.p);
   result = mat4x4_rotate(result, t.angle);
   result = mat4x4_scale(result, t.scale);
   
-  DEBUG_FUNCTION_END();
+  //DEBUG_FUNCTION_END();
   return result;
 }
 
@@ -297,13 +297,13 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
   
   assert(group->state_stack_count == 0);
   
-  DEBUG_SECTION_BEGIN(_push_instances);
   if (group->item_count != 0) {
     Quad_Instance *instances = arena_push_array(arena, Quad_Instance, group->item_count);
     i32 instance_count = 0;
     
     Texture_Atlas *atlas = 0;
     
+    DEBUG_SECTION_BEGIN(_push_instances);
     for (i32 item_index = 0; item_index < group->item_count; item_index++) {
       Render_Item *item = group->items + item_index;
       switch (item->type) {

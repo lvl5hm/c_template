@@ -45,14 +45,14 @@ i32 debug_get_var_i32(Debug_Var_Name name) {
 
 void debug_init(Arena *temp, byte *debug_memory) {
   arena_init(&debug_state->arena, debug_memory, megabytes(32));
-  arena_init_subarena(&debug_state->arena, &debug_state->gui.arena, kilobytes(32));
+  arena_init_subarena(&debug_state->arena, &debug_state->gui.arena, megabytes(4));
   
   Debug_GUI *gui = &debug_state->gui;
   gui->font = load_ttf(temp, &debug_state->arena, 
                        const_string("fonts/Inconsolata-Regular.ttf"));
   
   // NOTE(lvl5): variables
-  debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 0};
+  debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 1};
   debug_state->vars[Debug_Var_Name_COLLIDERS] = (Debug_Var){const_string("colliders"), 1};
   debug_state->vars[Debug_Var_Name_MEMORY] = (Debug_Var){const_string("memory"), 0};
   
@@ -255,7 +255,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
             Debug_Frame *frame = debug_state->frames + gui->selected_frame_index;
             i32 node_capacity = frame->timer_count+1;
             gui->nodes = arena_push_array(&gui->arena, 
-                                          Debug_View_Node, node_capacity);
+                                          Debug_View_Node, node_capacity*3);
             i32 node_index = 0;
             gui->node_count = 1;
             i32 depth = 0;
@@ -270,7 +270,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
               
               if (event->type == Debug_Type_BEGIN_TIMER) {
                 i32 new_index =  gui->node_count++;
-                assert(new_index < node_capacity);
+                //assert(new_index < node_capacity);
                 Debug_View_Node *node = gui->nodes + new_index;
                 node->type = Debug_View_Type_NONE;
                 node->name = alloc_string(&gui->arena, event->name,
@@ -285,6 +285,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
                 node_index = new_index;
               } else if (event->type == Debug_Type_END_TIMER) {
                 Debug_View_Node *node = gui->nodes + node_index;
+                assert(node->id == event->id);
                 node->one_past_last_child_index = gui->node_count;
                 node->duration = event->cycles - node->duration;
                 

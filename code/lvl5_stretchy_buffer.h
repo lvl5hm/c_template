@@ -40,7 +40,8 @@ void *__sb_init(Arena *arena, u32 capacity, b32 is_growable, u32 item_size) {
 
 #define sb_push(arr, item) __need_grow(arr) ? __grow(&(arr), sizeof(item), true) : 0, (arr)[sb_count(arr)++] = item
 
-void *__grow(void **arr_ptr, u64 item_size, b32 is_growable) {
+void *__grow(void *arr_ptr_, u64 item_size, b32 is_growable) {
+  void **arr_ptr = (void **)arr_ptr_;
   void *arr = *arr_ptr;
   
   sb_Header *header = __get_header(arr);

@@ -26,11 +26,7 @@ typedef i8 bool;
 #define gigabytes(n) (1024LL*megabytes(n))
 #define terabytes(n) (1024LL*gigabytes(n))
 
-#ifdef LVL5_DEBUG
-#define assert(expr) if (!(expr)) *(i32 *)0 = 0xFF;
-#else
-#define assert(expr)
-#endif
+#define assert(expr) if (!(expr)) *(int *)0 = 120;
 
 #define align_pow_2(value, align) (((value) + (align)-1) & ~((align)-1))
 

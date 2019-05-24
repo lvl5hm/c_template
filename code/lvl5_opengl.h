@@ -1,8 +1,14 @@
 #ifndef LVL5_OPENGL_H
 
 #include "lvl5_string.h"
+
+#ifndef APIENTRY
 #define APIENTRY __stdcall
+#endif
+
+#ifndef WINGDIAPI
 #define WINGDIAPI __declspec(dllimport)
+#endif
 
 #include <GL/gl.h>
 #include "KHR/glext.h"
