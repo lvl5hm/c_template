@@ -212,6 +212,28 @@ v2 v2_project(v2 a, v2 b) {
   return result;
 }
 
+v2 v2_rotate(v2 a, f32 angle) {
+  v2 result;
+  
+  result.x = a.x*cos_f32(angle) + a.y*sin_f32(angle);
+  result.y = -a.x*sin_f32(angle) + a.y*cos_f32(angle);
+  return result;
+}
+
+
+v2 v2_negate(v2 a) {
+  v2 result = v2_mul_s(a, -1);
+  return result;
+}
+
+v2 v2_perp_direction(v2 a, v2 b) {
+  v2 result = v2_perp(a);
+  if (v2_dot(result, b) < 0) {
+    result = v2_negate(result);
+  }
+  return result;
+}
+
 v2 v2_zero() {return V2(0, 0);}
 v2 v2_right() {return V2(1, 0);}
 v2 v2_left() {return V2(-1, 0);}
@@ -415,19 +437,6 @@ v4 v2_to_v4(v2 v, f32 z, f32 w) {
   result.w = w;
   return result;
 }
-
-// rotors
-typedef struct {
-  f32 dot;
-  f32 xy;
-} rotor2;
-
-typedef struct {
-  f32 dot;
-  f32 xy;
-  f32 xz;
-  f32 yz;
-} rotor3;
 
 // v2i
 

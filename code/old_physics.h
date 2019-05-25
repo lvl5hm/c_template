@@ -19,30 +19,6 @@ Velocity get_force(Transform t, v2 force_p, v2 force) {
 }
 
 
-typedef struct {
-  v2 v[16];
-  i32 count;
-} Polygon;
-
-Polygon aabb_transform(rect2 box, Transform t) {
-  //DEBUG_FUNCTION_BEGIN();
-  Polygon result;
-  result.v[0] = box.min;
-  result.v[1] = V2(box.min.x, box.max.y);
-  result.v[2] = box.max;
-  result.v[3] = V2(box.max.x, box.min.y);
-  result.count = 4;
-  
-  mat4x4 matrix4 = transform_apply(mat4x4_identity(), t);
-  
-  for (i32 i = 0; i < result.count; i++) {
-    result.v[i] = mat4x4_mul_v4(matrix4, v2_to_v4(result.v[i], 1, 1)).xy;
-  }
-  
-  //DEBUG_FUNCTION_END();
-  return result;
-}
-
 
 
 typedef struct {

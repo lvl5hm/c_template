@@ -96,6 +96,12 @@ audio_state.sound_count to 64
  
  [ ] collision
  -[x] SAT
+ -[ ] GJK
+ -[ ] removed 2D physics stuff for now. If I decide to go full physics,
+ I would probably need to do GJK/EPA/find contact manifold using some method
+ and I need to learn A LOT about rigidbody simulation if I want proper physics
+ Implementing just GJK for general collision would be super nice though
+ 
  -[ ] tilemap collision
  -[ ] collision rules?
  -[ ] grid / quadtree
@@ -146,8 +152,13 @@ Entity *add_entity(State *state, Entity_Type type) {
 
 Entity *add_entity_player(State *state) {
   Entity *e = add_entity(state, Entity_Type_PLAYER);
+#if 1
   e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
   e->box_collider.active = true;
+#else
+  e->circle_collider.r = 0.5f;
+  e->circle_collider.active = true;
+#endif
   
   return e;
 }
@@ -164,11 +175,13 @@ Entity *add_entity_box(State *state) {
 
 Entity *add_entity_enemy(State *state) {
   Entity *e = add_entity(state, Entity_Type_ENEMY);
+#if 1
+  e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
+  e->box_collider.active = true;
+#else
   e->circle_collider.r = 0.5f;
-  e->circle_collider.origin = v2_zero();
   e->circle_collider.active = true;
-  
-  e->t.scale = V3(0.3f, 0.3f, 1);
+#endif
   
   return e;
 }
@@ -329,6 +342,210 @@ b32 collide_aabb_aabb(rect2 a, rect2 b) {
   return result;
 }
 
+
+// NOTE(lvl5): GJK
+
+typedef struct {
+  v2 v[16];
+  i32 count;
+} Polygon;
+
+
+Polygon aabb_transform(rect2 box, Transform t) {
+  Polygon result;
+  result.v[0] = box.min;
+  result.v[1] = V2(box.min.x, box.max.y);
+  result.v[2] = box.max;
+  result.v[3] = V2(box.max.x, box.min.y);
+  result.count = 4;
+  
+  mat4x4 matrix4 = transform_apply(mat4x4_identity(), t);
+  
+  for (i32 i = 0; i < result.count; i++) {
+    result.v[i] = mat4x4_mul_v4(matrix4, v2_to_v4(result.v[i], 1, 1)).xy;
+  }
+  
+  return result;
+}
+
+
+v2 gjk_polygon_max_vertex_in_direction(v2 direction, Polygon a) {
+  f32 max = -INFINITY;
+  v2 result = {0};
+  for (i32 i = 0; i < a.count; i++) {
+    f32 dot = v2_dot(a.v[i], direction);
+    if (dot > max) {
+      max = dot;
+      result = a.v[i];
+    }
+  }
+  return result;
+}
+
+#define GJK_SUPPORT(name) v2 name(v2 direction, void *data_ptr)
+typedef GJK_SUPPORT(Gjk_Support_Fn);
+
+
+v2 v2_transform(v2 v, Transform t) {
+  mat4x4 matrix4 = transform_apply(mat4x4_identity(), t);
+  v2 result = mat4x4_mul_v4(matrix4, v2_to_v4(v, 1, 1)).xy;
+  return result;
+}
+
+typedef struct {
+  v2 a_center;
+  f32 a_radius;
+  Transform a_t;
+  
+  v2 b_center;
+  f32 b_radius;
+  Transform b_t;
+} Gjk_Support_Circles;
+
+GJK_SUPPORT(gjk_support_circles) {
+  DEBUG_FUNCTION_BEGIN();
+  Gjk_Support_Circles *data = (Gjk_Support_Circles *)data_ptr;
+  
+  v2 unit = v2_unit(direction);
+  v2 max_a = v2_add(data->a_center, v2_mul_s(unit, data->a_radius)); 
+  v2 max_b = v2_add(data->b_center, v2_mul_s(v2_negate(unit), 
+                                             data->b_radius)); 
+  max_a = v2_transform(max_a, data->a_t);
+  max_b = v2_transform(max_b, data->b_t);
+  
+  v2 result = v2_sub(max_a, max_b);
+  DEBUG_FUNCTION_END();
+  return result;
+}
+
+typedef struct {
+  Polygon a;
+  Polygon b;
+} Gjk_Support_Polygons;
+
+GJK_SUPPORT(gjk_support_polygons) {
+  DEBUG_FUNCTION_BEGIN();
+  Gjk_Support_Polygons *data = (Gjk_Support_Polygons *)data_ptr;
+  Polygon a = data->a;
+  Polygon b = data->b;
+  
+  v2 max_a = gjk_polygon_max_vertex_in_direction(direction, a);
+  v2 max_b = gjk_polygon_max_vertex_in_direction(v2_negate(direction), b);
+  
+  v2 result = v2_sub(max_a, max_b);
+  DEBUG_FUNCTION_END();
+  return result;
+}
+
+b32 collide_gjk(Render_Group *group, Gjk_Support_Fn *support, void *data) {
+  DEBUG_FUNCTION_BEGIN();
+  
+  v2 simplex[3];
+  i32 simplex_count = 1;
+  v2 start_p = support(v2_right(), data);
+  simplex[0] = start_p;
+  v2 dir = v2_mul_s(start_p, -1);
+  
+  b32 result = true;
+  while (true) {
+    v2 p = support(dir, data);
+    if (v2_dot(p, dir) < 0) {
+      result = false;
+      break;
+    } else {
+      simplex[simplex_count++] = p;
+      
+      // NOTE(lvl5): do_simplex
+      v2 o = v2_zero();
+      if (simplex_count == 2) {
+        v2 a = simplex[1];
+        v2 b = simplex[0];
+        v2 ab = v2_sub(b, a);
+        v2 ao = v2_sub(o, a);
+        dir = v2_perp_direction(ab, ao);
+      } else {
+        v2 a = simplex[2];
+        v2 b = simplex[1];
+        v2 c = simplex[0];
+        v2 ao = v2_sub(o, a);
+        v2 ab = v2_sub(b, a);
+        v2 ac = v2_sub(c, a);
+        v2 ab_perp = v2_perp_direction(ab, v2_negate(ac));
+        v2 ac_perp = v2_perp_direction(ac, v2_negate(ab));
+        
+#define same_direction(v) v2_dot(v, ao) > 0
+        
+        f32 thick = 0.02f;
+        
+        if (same_direction(ab_perp)) {
+          if (same_direction(ab)) {
+            simplex[0] = a;
+            simplex[1] = b;
+            simplex_count = 2;
+            dir = ab_perp;
+          } else {
+            if (same_direction(ac)) {
+              simplex[0] = a;
+              simplex[1] = c;
+              simplex_count = 2;
+              dir = ac_perp;
+            } else {
+              simplex[0] = a;
+              simplex_count = 1;
+              dir = ao;
+            }
+          }
+        } else {
+          if (same_direction(ac_perp)) {
+            if (same_direction(ac)) {
+              simplex[0] = a;
+              simplex[1] = c;
+              simplex_count = 2;
+              dir = ac_perp;
+            } else {
+              simplex[0] = a;
+              simplex_count = 1;
+              dir = ao;
+            }
+          } else {
+            result = true;
+            break;
+          }
+        }
+      }
+    }
+  }
+  
+  DEBUG_FUNCTION_END();
+  return result;
+}
+
+b32 collide_gjk_circle_circle(Render_Group *group, Circle_Collider a_coll, Transform a_t, Circle_Collider b_coll, Transform b_t) {
+  Gjk_Support_Circles data;
+  data.a_center = a_coll.origin;
+  data.a_radius = a_coll.r;
+  data.a_t = a_t;
+  
+  data.b_center = b_coll.origin;
+  data.b_radius = b_coll.r;
+  data.b_t = b_t;
+  
+  b32 result = collide_gjk(group, gjk_support_circles, &data);
+  return result;
+}
+
+b32 collide_gjk_box_box(Render_Group *group, rect2 a_rect, Transform a_t, rect2 b_rect, Transform b_t) {
+  Gjk_Support_Polygons data;
+  data.a = aabb_transform(a_rect, a_t);
+  data.b = aabb_transform(b_rect, b_t);
+  
+  b32 result = collide_gjk(group, gjk_support_polygons, &data);
+  return result;
+}
+
+
+
+
 #define SCRATCH_SIZE kilobytes(32)
 
 extern GAME_UPDATE(game_update) {
@@ -357,7 +574,7 @@ extern GAME_UPDATE(game_update) {
                                  const_string("sounds/koko_kara.wav"));
     state->snd_bop = load_wav(&state->temp, const_string("sounds/bop.wav"));
     
-    Playing_Sound *snd = sound_play(&state->sound_state, &state->test_sound, Sound_Type_MUSIC);
+    //Playing_Sound *snd = sound_play(&state->sound_state, &state->test_sound, Sound_Type_MUSIC);
     
     debug_add_arena(&state->arena, const_string("main"));
     debug_add_arena(&state->temp, const_string("temp"));
@@ -393,7 +610,6 @@ extern GAME_UPDATE(game_update) {
     state->debug_atlas.sprite_count = 1;
     
     
-    state->spr_circle = make_sprite(&state->atlas, 0, V2(0.5f, 0.5f));
     state->spr_robot_eye = make_sprite(&state->atlas, 0, V2(0.5f, 0.5f));
     state->spr_robot_leg = make_sprite(&state->atlas, 1, V2(0, 1));
     state->spr_robot_torso = make_sprite(&state->atlas, 2, V2(0.5f, 0.5f));
@@ -403,8 +619,10 @@ extern GAME_UPDATE(game_update) {
     
     quad_renderer_init(&state->renderer, state);
     add_entity(state, Entity_Type_NONE); // filler entity
-    //add_entity_player(state);
-    
+    add_entity_player(state);
+    Entity *e = add_entity_enemy(state);
+    e->t.p.x = 2;
+    e->t.scale.x = 2.0f;
     
     
 #include "robot_animation.h"
@@ -435,25 +653,55 @@ extern GAME_UPDATE(game_update) {
   v2 mouse_meters = get_mouse_p_meters(input, screen_size);
 #endif
   
+  v4 collider_color = V4(1, 0, 0, 1);
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
     Entity *entity = get_entity(state, entity_index);
     
     switch (entity->type) {
-      
       case Entity_Type_PLAYER: {
+        v2 move_dir = v2_i(input->move_right.is_down - input->move_left.is_down,
+                           input->move_up.is_down - input->move_down.is_down);
+        v2 dp = v2_mul_s(move_dir, dt);
+        entity->t.p = v3_add(entity->t.p, v2_to_v3(dp, 0));
         
+        
+        
+        for (i32 other_index = entity_index+1;
+             other_index < state->entity_count;
+             other_index++) {
+          Entity *other = get_entity(state, other_index);
+          if (entity->box_collider.active) {
+            if (collide_gjk_box_box(group, entity->box_collider.rect, entity->t,
+                                    other->box_collider.rect, other->t)) {
+              collider_color = V4(0, 1, 0, 1);
+            }
+          } else {
+            if (collide_gjk_circle_circle(group, entity->circle_collider, entity->t,
+                                          other->circle_collider, other->t)) {
+              collider_color = V4(0, 1, 0, 1);
+            }
+          }
+        }
+      } break;
+      
+      case Entity_Type_ENEMY: {
+        if (input->start.is_down) {
+          entity->t.angle += 1.0f*dt;
+        }
       } break;
     }
     
     if (debug_get_var_i32(Debug_Var_Name_COLLIDERS)) {
       render_save(group);
       render_transform(group, entity->t);
-      render_color(group, V4(1, 0, 0, 1));
+      render_color(group, collider_color);
       if (entity->box_collider.active) {
         push_rect_outline(group, entity->box_collider.rect, 0.04f);
       }
       if (entity->circle_collider.active) {
-        push_sprite(group, state->spr_circle, transform_default());
+        Circle_Collider coll = entity->circle_collider;
+        push_circle_outline(group, coll.origin, coll.r, 0.04f);
+        //push_sprite(group, state->spr_circle, transform_default());
       }
       render_restore(group);
     }

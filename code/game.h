@@ -107,7 +107,6 @@ typedef struct {
   Font font;
   Texture_Atlas debug_atlas;
   
-  Sprite spr_circle;
   Sprite spr_robot_torso;
   Sprite spr_robot_leg;
   Sprite spr_robot_eye;

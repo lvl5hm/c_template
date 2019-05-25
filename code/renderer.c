@@ -106,7 +106,6 @@ void push_rect(Render_Group *group, rect2 rect) {
   render_restore(group);
 }
 
-
 void push_line(Render_Group *group, v2 start, v2 end, f32 thick) {
   v2 diff = v2_sub(end, start);
   f32 angle = atan2_f32(diff.y, diff.x);
@@ -123,6 +122,23 @@ void push_line_color(Render_Group *group, v2 start, v2 end, f32 thick, v4 color)
   render_color(group, color);
   push_line(group, start, end, thick);
   render_restore(group);
+}
+
+
+void push_circle_outline(Render_Group *group, v2 center, f32 radius, f32 thick) {
+  i32 segment_count = 20;
+  f32 angle_per_segment = 2*PI/segment_count;
+  
+  for (i32 segment_index = 0; segment_index < segment_count; segment_index++) {
+    f32 angle_start = segment_index*angle_per_segment;
+    f32 angle_end = (segment_index+1)*angle_per_segment;
+    
+    v2 r = v2_mul_s(v2_right(), radius);
+    v2 start = v2_rotate(r, angle_start);
+    v2 end = v2_rotate(r, angle_end);
+    
+    push_line(group, start, end, thick);
+  }
 }
 
 void push_rect_outline(Render_Group *group, rect2 rect, f32 thick) {
