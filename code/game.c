@@ -152,7 +152,7 @@ Entity *add_entity(State *state, Entity_Type type) {
 
 Entity *add_entity_player(State *state) {
   Entity *e = add_entity(state, Entity_Type_PLAYER);
-#if 1
+#if 0
   e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
   e->box_collider.active = true;
 #else
@@ -175,11 +175,12 @@ Entity *add_entity_box(State *state) {
 
 Entity *add_entity_enemy(State *state) {
   Entity *e = add_entity(state, Entity_Type_ENEMY);
-#if 1
+#if 0
   e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
   e->box_collider.active = true;
 #else
   e->circle_collider.r = 0.5f;
+  e->t.scale.x = 2.0f;
   e->circle_collider.active = true;
 #endif
   
@@ -400,21 +401,43 @@ typedef struct {
   v2 b_center;
   f32 b_radius;
   Transform b_t;
+  Render_Group *group;
 } Gjk_Support_Circles;
 
 GJK_SUPPORT(gjk_support_circles) {
   DEBUG_FUNCTION_BEGIN();
   Gjk_Support_Circles *data = (Gjk_Support_Circles *)data_ptr;
   
-  v2 unit = v2_unit(direction);
-  v2 max_a = v2_add(data->a_center, v2_mul_s(unit, data->a_radius)); 
-  v2 max_b = v2_add(data->b_center, v2_mul_s(v2_negate(unit), 
-                                             data->b_radius)); 
-  max_a = v2_transform(max_a, data->a_t);
-  max_b = v2_transform(max_b, data->b_t);
+#if 0
+  f32 a_w = data->a_t.scale.x*data->a_radius;
+  f32 a_h = data->a_t.scale.y*data->a_radius;
+#endif
   
-  v2 result = v2_sub(max_a, max_b);
+  v2 unit = v2_unit(direction);
+  v2 anti_unit = v2_negate(unit);
+  
+  mat4x4 m = mat4x4_identity();
+  m = mat4x4_rotate(m, data->a_t.angle);
+  m = mat4x4_scale(m, data->a_t.scale);
+  v2 a_max = v2_mul_s(v2_rotate(unit, data->a_t.angle), data->a_radius);
+  a_max = mat4x4_mul_v4(m, v2_to_v4(a_max, 1, 1)).xy;
+  a_max = v2_add(data->a_t.p.xy, a_max);
+  
+  
+  m = mat4x4_identity();
+  m = mat4x4_rotate(m, data->b_t.angle);
+  m = mat4x4_scale(m, data->b_t.scale);
+  v2 b_max = v2_mul_s(v2_rotate(anti_unit, data->b_t.angle), data->b_radius);
+  b_max = mat4x4_mul_v4(m, v2_to_v4(b_max, 1, 1)).xy;
+  b_max = v2_add(data->b_t.p.xy, b_max);
+  
+  
+  
+  push_rect(data->group, rect2_center_size(a_max, V2(0.1f, 0.1f)));
+  push_rect(data->group, rect2_center_size(b_max, V2(0.1f, 0.1f)));
+  
   DEBUG_FUNCTION_END();
+  v2 result = v2_sub(a_max, b_max);
   return result;
 }
 
@@ -429,10 +452,10 @@ GJK_SUPPORT(gjk_support_polygons) {
   Polygon a = data->a;
   Polygon b = data->b;
   
-  v2 max_a = gjk_polygon_max_vertex_in_direction(direction, a);
-  v2 max_b = gjk_polygon_max_vertex_in_direction(v2_negate(direction), b);
+  v2 a_max = gjk_polygon_max_vertex_in_direction(direction, a);
+  v2 b_max = gjk_polygon_max_vertex_in_direction(v2_negate(direction), b);
   
-  v2 result = v2_sub(max_a, max_b);
+  v2 result = v2_sub(a_max, b_max);
   DEBUG_FUNCTION_END();
   return result;
 }
@@ -530,6 +553,8 @@ b32 collide_gjk_circle_circle(Render_Group *group, Circle_Collider a_coll, Trans
   data.b_radius = b_coll.r;
   data.b_t = b_t;
   
+  data.group = group;
+  
   b32 result = collide_gjk(group, gjk_support_circles, &data);
   return result;
 }
@@ -622,7 +647,7 @@ extern GAME_UPDATE(game_update) {
     add_entity_player(state);
     Entity *e = add_entity_enemy(state);
     e->t.p.x = 2;
-    e->t.scale.x = 2.0f;
+    //e->t.scale.x = 2.0f;
     
     
 #include "robot_animation.h"
@@ -701,9 +726,39 @@ extern GAME_UPDATE(game_update) {
       if (entity->circle_collider.active) {
         Circle_Collider coll = entity->circle_collider;
         push_circle_outline(group, coll.origin, coll.r, 0.04f);
-        //push_sprite(group, state->spr_circle, transform_default());
       }
       render_restore(group);
+      
+      if (entity_index == 1) {
+        //entity->t.scale.x = 2.0f;
+        //entity->t.scale.y = 1.0f;
+        //Circle_Collider coll = entity->circle_collider;
+        
+        
+#if 0
+        {
+          v2 scale = entity->t.scale.xy;
+          f32 angle = entity->t.angle;
+          f32 cos_a = cos_f32(angle);
+          f32 sin_a = sin_f32(angle);
+          f32 width = sqrt_f32(sqr_f32(cos_a*scale.x) +
+                               sqr_f32(sin_a*scale.y));
+          v2 start = entity->t.p.xy;
+          v2 end = v2_add(start, V2(width, 0));
+          push_line_color(group, start, end, 0.05f, V4(0, 1, 0, 1));
+        }
+        
+        {
+          f32 angle = entity->t.angle + PI/2;
+          f32 cos_a = sqr_f32(cos_f32(angle));
+          f32 sin_a = sqr_f32(sin_f32(angle));
+          f32 height = cos_a*entity->t.scale.x + sin_a*entity->t.scale.y;
+          v2 start = v2_sub(entity->t.p.xy, V2(0, height*0.5f));
+          v2 end = v2_add(start, V2(0, height));
+          push_line_color(group, start, end, 0.05f, V4(0, 1, 0, 1));
+        }
+#endif
+      }
     }
   }
   

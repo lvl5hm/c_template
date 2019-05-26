@@ -214,7 +214,6 @@ v2 v2_project(v2 a, v2 b) {
 
 v2 v2_rotate(v2 a, f32 angle) {
   v2 result;
-  
   result.x = a.x*cos_f32(angle) + a.y*sin_f32(angle);
   result.y = -a.x*sin_f32(angle) + a.y*cos_f32(angle);
   return result;
