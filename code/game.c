@@ -118,6 +118,7 @@ audio_state.sound_count to 64
  
 */
 
+globalvar Render_Group *global_group = 0;
 
 Entity *get_entity(State *state, i32 index) {
   assert(index < state->entity_count);
@@ -175,13 +176,13 @@ Entity *add_entity_box(State *state) {
 
 Entity *add_entity_enemy(State *state) {
   Entity *e = add_entity(state, Entity_Type_ENEMY);
-  e->t.scale.x = 2.0f;
+  e->t.scale.xy = V2(3.0f, 0.5f);
 #if 0
   e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
   e->box_collider.active = true;
 #else
   e->collider.circle.r = 0.5f;
-  //e->collider.circle.origin = V2(0.5f, 0);
+  e->collider.circle.origin = V2(0, 0);
   e->collider.type = Collider_Type_CIRCLE;
 #endif
   
@@ -350,6 +351,12 @@ v2 v2_transform(v2 v, Transform t) {
   return result;
 }
 
+v2 v2_transform_inverse(v2 v, Transform t) {
+  mat4x4 matrix4 = transform_apply_inverse(mat4x4_identity(), t);
+  v2 result = mat4x4_mul_v4(matrix4, v2_to_v4(v, 1, 1)).xy;
+  return result;
+}
+
 Polygon aabb_transform(rect2 box, Transform t) {
   Polygon result;
   result.v[0] = box.min;
@@ -382,11 +389,20 @@ v2 gjk_polygon_max_vertex_in_direction(Polygon a, v2 direction) {
 }
 
 v2 gjk_circle_get_max_vertex_in_direction(Circle_Collider e, Transform t, v2 direction_unit) {
-  v2 max = direction_unit;
-  max = v2_mul_s(max, e.r);
-  max = v2_rotate(max, -t.angle);
-  max = v2_add(max, e.origin);
-  max = v2_transform(max, t);
+  v2 scale = v2_mul_s(t.scale.xy, e.r);
+  
+  v2 normal = v2_perp(v2_negate(direction_unit));
+  normal = v2_rotate(normal, -t.angle);
+  normal = v2_hadamard(normal, v2_invert(scale));
+  
+  v2 max = v2_unit(v2_perp(normal));
+  max = v2_hadamard(max, scale);
+  
+  v2 origin =  v2_hadamard(e.origin, t.scale.xy);
+  max = v2_add(max, origin);
+  max = v2_rotate(max, t.angle);
+  max = v2_add(max, t.p.xy);
+  
   return max;
 }
 
@@ -417,6 +433,12 @@ v2 gjk_support(v2 direction, Collider a, Transform a_t, Collider b, Transform b_
   v2 a_max = gjk_collider_get_max(direction, a, a_t);
   v2 b_max = gjk_collider_get_max(v2_negate(direction), b, b_t);
   
+#if 0
+  v2 size = V2(0.1f, 0.1f);
+  push_rect(global_group, rect2_center_size(a_max, size));
+  push_rect(global_group, rect2_center_size(b_max, size));
+#endif
+  
   v2 result = v2_sub(a_max, b_max);
   return result;
 }
@@ -430,7 +452,6 @@ b32 gjk_collide(Collider a_coll, Transform a_t,
   v2 start_p = gjk_support(v2_right(), a_coll, a_t, b_coll, b_t);
   simplex[0] = start_p;
   v2 dir = v2_mul_s(start_p, -1);
-  
   b32 result = true;
   while (true) {
     v2 p = gjk_support(dir, a_coll, a_t, b_coll, b_t);;
@@ -538,7 +559,7 @@ extern GAME_UPDATE(game_update) {
     // NOTE(lvl5): when live reloading, the sound file can be overwritten
     // with garbage since it's located in temp arena right now
     state->test_sound = load_wav(&state->temp, 
-                                 const_string("sounds/koko_kara.wav"));
+                                 const_string("sounds/durarara.wav"));
     state->snd_bop = load_wav(&state->temp, const_string("sounds/bop.wav"));
     
     //Playing_Sound *snd = sound_play(&state->sound_state, &state->test_sound, Sound_Type_MUSIC);
@@ -588,7 +609,7 @@ extern GAME_UPDATE(game_update) {
     add_entity(state, Entity_Type_NONE); // filler entity
     add_entity_player(state);
     Entity *e = add_entity_enemy(state);
-    e->t.p.x = 2;
+    //e->t.p.x = 2;
     //e->t.scale.x = 2.0f;
     
     
@@ -616,6 +637,8 @@ extern GAME_UPDATE(game_update) {
   Render_Group *group = &_group;
   render_group_init(&state->temp, state, group, 100000, screen_size);
   
+  global_group = group;
+  render_font(group, &state->font);
   
 #if 1
   //v2 half_screen_meters = v2_div_s(screen_size, PIXELS_PER_METER*2);
@@ -623,7 +646,6 @@ extern GAME_UPDATE(game_update) {
 #endif
 #if 0
   {
-    render_font(group, &state->font);
     char buffer[256];
     sprintf_s(buffer, array_count(buffer), "wheel: %d", input->mouse.scroll);
     String str = from_c_string(buffer);
@@ -663,10 +685,7 @@ extern GAME_UPDATE(game_update) {
     
     switch (entity->type) {
       case Entity_Type_PLAYER: {
-        v2 move_dir = v2_i(input->move_right.is_down - input->move_left.is_down,
-                           input->move_up.is_down - input->move_down.is_down);
-        v2 dp = v2_mul_s(move_dir, dt);
-        entity->t.p = v3_add(entity->t.p, v2_to_v3(dp, 0));
+        
         
         
         
@@ -687,6 +706,10 @@ extern GAME_UPDATE(game_update) {
         if (input->start.is_down) {
           entity->t.angle += 1.0f*dt;
         }
+        v2 move_dir = v2_i(input->move_right.is_down - input->move_left.is_down,
+                           input->move_up.is_down - input->move_down.is_down);
+        v2 dp = v2_mul_s(move_dir, dt);
+        entity->t.p = v3_add(entity->t.p, v2_to_v3(dp, 0));
       } break;
     }
     

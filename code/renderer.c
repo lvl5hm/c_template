@@ -4,16 +4,23 @@
 #include "font.c"
 
 mat4x4 transform_apply(mat4x4 matrix, Transform t) {
-  //DEBUG_FUNCTION_BEGIN();
-  
   mat4x4 result = matrix;
   result = mat4x4_translate(result, t.p);
   result = mat4x4_rotate(result, t.angle);
   result = mat4x4_scale(result, t.scale);
   
-  //DEBUG_FUNCTION_END();
   return result;
 }
+
+mat4x4 transform_apply_inverse(mat4x4 matrix, Transform t) {
+  mat4x4 result = matrix;
+  result = mat4x4_scale(result, v3_invert(t.scale));
+  result = mat4x4_rotate(result, -t.angle);
+  result = mat4x4_translate(result, v3_mul_s(t.p, -1));
+  
+  return result;
+}
+
 
 Transform make_transform(v3 p, v3 scale, f32 angle) {
   Transform t;
@@ -47,6 +54,10 @@ void render_rotate(Render_Group *group, f32 angle) {
 
 void render_transform(Render_Group *group, Transform t) {
   group->state.matrix = transform_apply(group->state.matrix, t);
+}
+
+void render_transform_inverse(Render_Group *group, Transform t) {
+  group->state.matrix = transform_apply_inverse(group->state.matrix, t);
 }
 
 void render_color(Render_Group *group, v4 color) {
