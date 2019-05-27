@@ -57,16 +57,36 @@ typedef struct {
 // TODO(lvl5): should every entity part be an entity?
 // every entity has a collider, when it animates, the collider moves with it
 
+
+typedef struct {
+  v2 v[16];
+  i32 count;
+} Polygon;
+
 typedef struct {
   f32 r;
   v2 origin;
-  b32 active;
 } Circle_Collider;
 
 typedef struct {
   rect2 rect;
-  b32 active;
 } Box_Collider;
+
+typedef enum {
+  Collider_Type_NONE,
+  Collider_Type_CIRCLE,
+  Collider_Type_BOX,
+  Collider_Type_POINT,
+} Collider_Type;
+
+typedef struct {
+  union {
+    Box_Collider box;
+    Circle_Collider circle;
+    v2 point;
+  };
+  Collider_Type type;
+} Collider;
 
 typedef struct {
   i32 index;
@@ -76,8 +96,8 @@ typedef struct {
   v3 dp;
   f32 d_angle;
   
-  Box_Collider box_collider;
-  Circle_Collider circle_collider;
+  Collider collider;
+  b32 is_colliding;
 } Entity;
 
 

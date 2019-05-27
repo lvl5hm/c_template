@@ -134,8 +134,8 @@ void push_circle_outline(Render_Group *group, v2 center, f32 radius, f32 thick) 
     f32 angle_end = (segment_index+1)*angle_per_segment;
     
     v2 r = v2_mul_s(v2_right(), radius);
-    v2 start = v2_rotate(r, angle_start);
-    v2 end = v2_rotate(r, angle_end);
+    v2 start = v2_add(center, v2_rotate(r, angle_start));
+    v2 end = v2_add(center, v2_rotate(r, angle_end));
     
     push_line(group, start, end, thick);
   }

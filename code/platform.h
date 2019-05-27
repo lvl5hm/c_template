@@ -27,6 +27,7 @@ typedef struct {
   v2 p;
   Button left;
   Button right;
+  i32 scroll;
 } Mouse;
 
 typedef struct {

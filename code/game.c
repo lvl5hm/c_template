@@ -152,22 +152,22 @@ Entity *add_entity(State *state, Entity_Type type) {
 
 Entity *add_entity_player(State *state) {
   Entity *e = add_entity(state, Entity_Type_PLAYER);
-#if 0
-  e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
-  e->box_collider.active = true;
+  e->t.scale = V3(0.2f, 0.6f, 0.2f);
+#if 1
+  e->collider.box.rect = rect2_center_size(V2(0, 0), V2(1, 1));
+  e->collider.type = Collider_Type_BOX;
 #else
-  e->circle_collider.r = 0.5f;
-  e->circle_collider.active = true;
+  e->collider.circle.r = 0.5f;
+  e->collider.circle.origin = v2_zero();
+  e->collider.type = Collider_Type_CIRCLE;
 #endif
   
   return e;
 }
 
 Entity *add_entity_box(State *state) {
-  Entity *e = add_entity(state, Entity_Type_BOX);
-  e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
-  e->box_collider.active = true;
-  e->t.scale = V3(0.5f, 0.5f, 1);
+  Entity *e = add_entity(state, Entity_Type_PLAYER);
+  
   
   return e;
 }
@@ -175,13 +175,14 @@ Entity *add_entity_box(State *state) {
 
 Entity *add_entity_enemy(State *state) {
   Entity *e = add_entity(state, Entity_Type_ENEMY);
+  e->t.scale.x = 2.0f;
 #if 0
   e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
   e->box_collider.active = true;
 #else
-  e->circle_collider.r = 0.5f;
-  e->t.scale.x = 2.0f;
-  e->circle_collider.active = true;
+  e->collider.circle.r = 0.5f;
+  //e->collider.circle.origin = V2(0.5f, 0);
+  e->collider.type = Collider_Type_CIRCLE;
 #endif
   
   return e;
@@ -343,14 +344,11 @@ b32 collide_aabb_aabb(rect2 a, rect2 b) {
   return result;
 }
 
-
-// NOTE(lvl5): GJK
-
-typedef struct {
-  v2 v[16];
-  i32 count;
-} Polygon;
-
+v2 v2_transform(v2 v, Transform t) {
+  mat4x4 matrix4 = transform_apply(mat4x4_identity(), t);
+  v2 result = mat4x4_mul_v4(matrix4, v2_to_v4(v, 1, 1)).xy;
+  return result;
+}
 
 Polygon aabb_transform(rect2 box, Transform t) {
   Polygon result;
@@ -369,8 +367,8 @@ Polygon aabb_transform(rect2 box, Transform t) {
   return result;
 }
 
-
-v2 gjk_polygon_max_vertex_in_direction(v2 direction, Polygon a) {
+// NOTE(lvl5): GJK
+v2 gjk_polygon_max_vertex_in_direction(Polygon a, v2 direction) {
   f32 max = -INFINITY;
   v2 result = {0};
   for (i32 i = 0; i < a.count; i++) {
@@ -383,95 +381,59 @@ v2 gjk_polygon_max_vertex_in_direction(v2 direction, Polygon a) {
   return result;
 }
 
-#define GJK_SUPPORT(name) v2 name(v2 direction, void *data_ptr)
-typedef GJK_SUPPORT(Gjk_Support_Fn);
+v2 gjk_circle_get_max_vertex_in_direction(Circle_Collider e, Transform t, v2 direction_unit) {
+  v2 max = direction_unit;
+  max = v2_mul_s(max, e.r);
+  max = v2_rotate(max, -t.angle);
+  max = v2_add(max, e.origin);
+  max = v2_transform(max, t);
+  return max;
+}
 
-
-v2 v2_transform(v2 v, Transform t) {
-  mat4x4 matrix4 = transform_apply(mat4x4_identity(), t);
-  v2 result = mat4x4_mul_v4(matrix4, v2_to_v4(v, 1, 1)).xy;
+v2 gjk_collider_get_max(v2 direction, Collider coll, Transform t) {
+  v2 result = {0};
+  switch (coll.type) {
+    case Collider_Type_CIRCLE: {
+      v2 unit = v2_unit(direction);
+      result = gjk_circle_get_max_vertex_in_direction(coll.circle, t,
+                                                      unit);
+    } break;
+    
+    case Collider_Type_BOX: {
+      Polygon poly = aabb_transform(coll.box.rect, t);
+      result = gjk_polygon_max_vertex_in_direction(poly, direction);
+    } break;
+    
+    case Collider_Type_POINT: {
+      result = coll.point;
+    } break;
+    
+    default: assert(false);
+  }
   return result;
 }
 
-typedef struct {
-  v2 a_center;
-  f32 a_radius;
-  Transform a_t;
+v2 gjk_support(v2 direction, Collider a, Transform a_t, Collider b, Transform b_t) {
+  v2 a_max = gjk_collider_get_max(direction, a, a_t);
+  v2 b_max = gjk_collider_get_max(v2_negate(direction), b, b_t);
   
-  v2 b_center;
-  f32 b_radius;
-  Transform b_t;
-  Render_Group *group;
-} Gjk_Support_Circles;
-
-GJK_SUPPORT(gjk_support_circles) {
-  DEBUG_FUNCTION_BEGIN();
-  Gjk_Support_Circles *data = (Gjk_Support_Circles *)data_ptr;
-  
-#if 0
-  f32 a_w = data->a_t.scale.x*data->a_radius;
-  f32 a_h = data->a_t.scale.y*data->a_radius;
-#endif
-  
-  v2 unit = v2_unit(direction);
-  v2 anti_unit = v2_negate(unit);
-  
-  mat4x4 m = mat4x4_identity();
-  m = mat4x4_rotate(m, data->a_t.angle);
-  m = mat4x4_scale(m, data->a_t.scale);
-  v2 a_max = v2_mul_s(v2_rotate(unit, data->a_t.angle), data->a_radius);
-  a_max = mat4x4_mul_v4(m, v2_to_v4(a_max, 1, 1)).xy;
-  a_max = v2_add(data->a_t.p.xy, a_max);
-  
-  
-  m = mat4x4_identity();
-  m = mat4x4_rotate(m, data->b_t.angle);
-  m = mat4x4_scale(m, data->b_t.scale);
-  v2 b_max = v2_mul_s(v2_rotate(anti_unit, data->b_t.angle), data->b_radius);
-  b_max = mat4x4_mul_v4(m, v2_to_v4(b_max, 1, 1)).xy;
-  b_max = v2_add(data->b_t.p.xy, b_max);
-  
-  
-  
-  push_rect(data->group, rect2_center_size(a_max, V2(0.1f, 0.1f)));
-  push_rect(data->group, rect2_center_size(b_max, V2(0.1f, 0.1f)));
-  
-  DEBUG_FUNCTION_END();
   v2 result = v2_sub(a_max, b_max);
   return result;
 }
 
-typedef struct {
-  Polygon a;
-  Polygon b;
-} Gjk_Support_Polygons;
-
-GJK_SUPPORT(gjk_support_polygons) {
-  DEBUG_FUNCTION_BEGIN();
-  Gjk_Support_Polygons *data = (Gjk_Support_Polygons *)data_ptr;
-  Polygon a = data->a;
-  Polygon b = data->b;
-  
-  v2 a_max = gjk_polygon_max_vertex_in_direction(direction, a);
-  v2 b_max = gjk_polygon_max_vertex_in_direction(v2_negate(direction), b);
-  
-  v2 result = v2_sub(a_max, b_max);
-  DEBUG_FUNCTION_END();
-  return result;
-}
-
-b32 collide_gjk(Render_Group *group, Gjk_Support_Fn *support, void *data) {
+b32 gjk_collide(Collider a_coll, Transform a_t,
+                Collider b_coll, Transform b_t) {
   DEBUG_FUNCTION_BEGIN();
   
   v2 simplex[3];
   i32 simplex_count = 1;
-  v2 start_p = support(v2_right(), data);
+  v2 start_p = gjk_support(v2_right(), a_coll, a_t, b_coll, b_t);
   simplex[0] = start_p;
   v2 dir = v2_mul_s(start_p, -1);
   
   b32 result = true;
   while (true) {
-    v2 p = support(dir, data);
+    v2 p = gjk_support(dir, a_coll, a_t, b_coll, b_t);;
     if (v2_dot(p, dir) < 0) {
       result = false;
       break;
@@ -543,33 +505,13 @@ b32 collide_gjk(Render_Group *group, Gjk_Support_Fn *support, void *data) {
   return result;
 }
 
-b32 collide_gjk_circle_circle(Render_Group *group, Circle_Collider a_coll, Transform a_t, Circle_Collider b_coll, Transform b_t) {
-  Gjk_Support_Circles data;
-  data.a_center = a_coll.origin;
-  data.a_radius = a_coll.r;
-  data.a_t = a_t;
-  
-  data.b_center = b_coll.origin;
-  data.b_radius = b_coll.r;
-  data.b_t = b_t;
-  
-  data.group = group;
-  
-  b32 result = collide_gjk(group, gjk_support_circles, &data);
+b32 gjk_collide_point(v2 point, Collider a_coll, Transform a_t) {
+  Collider b_coll;
+  b_coll.type = Collider_Type_POINT;
+  b_coll.point = point;
+  b32 result = gjk_collide(a_coll, a_t, b_coll, transform_default());
   return result;
 }
-
-b32 collide_gjk_box_box(Render_Group *group, rect2 a_rect, Transform a_t, rect2 b_rect, Transform b_t) {
-  Gjk_Support_Polygons data;
-  data.a = aabb_transform(a_rect, a_t);
-  data.b = aabb_transform(b_rect, b_t);
-  
-  b32 result = collide_gjk(group, gjk_support_polygons, &data);
-  return result;
-}
-
-
-
 
 #define SCRATCH_SIZE kilobytes(32)
 
@@ -668,19 +610,56 @@ extern GAME_UPDATE(game_update) {
   }
   
   
+  
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group _group;
   Render_Group *group = &_group;
   render_group_init(&state->temp, state, group, 100000, screen_size);
   
-#if 0  
-  v2 half_screen_meters = v2_div_s(screen_size, PIXELS_PER_METER*2);
+  
+#if 1
+  //v2 half_screen_meters = v2_div_s(screen_size, PIXELS_PER_METER*2);
   v2 mouse_meters = get_mouse_p_meters(input, screen_size);
 #endif
+#if 0
+  {
+    render_font(group, &state->font);
+    char buffer[256];
+    sprintf_s(buffer, array_count(buffer), "wheel: %d", input->mouse.scroll);
+    String str = from_c_string(buffer);
+    push_text(group, str);
+  }
+#endif
   
-  v4 collider_color = V4(1, 0, 0, 1);
+  
+  if (state->selected_entity) {
+    Entity *e = get_entity(state, state->selected_entity);
+    e->t.p.xy = v2_sub(mouse_meters, state->start_p);
+    if (input->mouse.scroll) {
+      e->t.angle += input->mouse.scroll*0.1f;
+    }
+  }
+  
+  if (input->mouse.left.went_up) {
+    state->selected_entity = 0;
+  }
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
     Entity *entity = get_entity(state, entity_index);
+    entity->is_colliding = false;
+  }
+  
+  for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
+    Entity *entity = get_entity(state, entity_index);
+    
+    v4 collider_color = V4(1, 0, 0, 1);
+    
+    if (gjk_collide_point(mouse_meters, entity->collider, entity->t)) {
+      collider_color = V4(0, 0, 1, 1);
+      if (input->mouse.left.went_down) {
+        state->selected_entity = entity_index;
+        state->start_p = v2_sub(mouse_meters, entity->t.p.xy);
+      }
+    }
     
     switch (entity->type) {
       case Entity_Type_PLAYER: {
@@ -695,16 +674,11 @@ extern GAME_UPDATE(game_update) {
              other_index < state->entity_count;
              other_index++) {
           Entity *other = get_entity(state, other_index);
-          if (entity->box_collider.active) {
-            if (collide_gjk_box_box(group, entity->box_collider.rect, entity->t,
-                                    other->box_collider.rect, other->t)) {
-              collider_color = V4(0, 1, 0, 1);
-            }
-          } else {
-            if (collide_gjk_circle_circle(group, entity->circle_collider, entity->t,
-                                          other->circle_collider, other->t)) {
-              collider_color = V4(0, 1, 0, 1);
-            }
+          if (gjk_collide(entity->collider, entity->t,
+                          other->collider, other->t)) {
+            //collider_color = V4(0, 1, 0, 1);
+            entity->is_colliding = true;
+            other->is_colliding = true;
           }
         }
       } break;
@@ -720,50 +694,23 @@ extern GAME_UPDATE(game_update) {
       render_save(group);
       render_transform(group, entity->t);
       render_color(group, collider_color);
-      if (entity->box_collider.active) {
-        push_rect_outline(group, entity->box_collider.rect, 0.04f);
+      if (entity->is_colliding) {
+        render_color(group, V4(0, 1, 0, 1));
       }
-      if (entity->circle_collider.active) {
-        Circle_Collider coll = entity->circle_collider;
-        push_circle_outline(group, coll.origin, coll.r, 0.04f);
+      
+      switch (entity->collider.type) {
+        case Collider_Type_BOX: {
+          push_rect_outline(group, entity->collider.box.rect, 0.04f);
+        } break;
+        case Collider_Type_CIRCLE: {
+          Circle_Collider coll = entity->collider.circle;
+          push_circle_outline(group, coll.origin, coll.r, 0.04f);
+        } break;
+        default: assert(false);
       }
       render_restore(group);
-      
-      if (entity_index == 1) {
-        //entity->t.scale.x = 2.0f;
-        //entity->t.scale.y = 1.0f;
-        //Circle_Collider coll = entity->circle_collider;
-        
-        
-#if 0
-        {
-          v2 scale = entity->t.scale.xy;
-          f32 angle = entity->t.angle;
-          f32 cos_a = cos_f32(angle);
-          f32 sin_a = sin_f32(angle);
-          f32 width = sqrt_f32(sqr_f32(cos_a*scale.x) +
-                               sqr_f32(sin_a*scale.y));
-          v2 start = entity->t.p.xy;
-          v2 end = v2_add(start, V2(width, 0));
-          push_line_color(group, start, end, 0.05f, V4(0, 1, 0, 1));
-        }
-        
-        {
-          f32 angle = entity->t.angle + PI/2;
-          f32 cos_a = sqr_f32(cos_f32(angle));
-          f32 sin_a = sqr_f32(sin_f32(angle));
-          f32 height = cos_a*entity->t.scale.x + sin_a*entity->t.scale.y;
-          v2 start = v2_sub(entity->t.p.xy, V2(0, height*0.5f));
-          v2 end = v2_add(start, V2(0, height));
-          push_line_color(group, start, end, 0.05f, V4(0, 1, 0, 1));
-        }
-#endif
-      }
     }
   }
-  
-  
-  
   
   DEBUG_SECTION_BEGIN(_glClear);
   gl.ClearColor(0.2f, 0.2f, 0.2f, 1.0f);

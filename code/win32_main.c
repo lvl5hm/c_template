@@ -944,13 +944,17 @@ int CALLBACK WinMain(HINSTANCE instance,
     ScreenToClient(window, &mouse_p);
     game_input.mouse.p.x = (f32)mouse_p.x;
     game_input.mouse.p.y = (f32)(client_rect.bottom - mouse_p.y);
-    
+    game_input.mouse.scroll = 0;
     
     
     while (PeekMessage(&message, window, 0, 0, PM_REMOVE)) 
     {
       switch (message.message)
       {
+        case WM_MOUSEWHEEL: {
+          game_input.mouse.scroll = GET_WHEEL_DELTA_WPARAM(message.wParam)/WHEEL_DELTA;
+        } break;
+        
         case WM_LBUTTONDOWN: {
           if (message.wParam & MK_RBUTTON)
             win32_handle_button(&game_input.mouse.right, true);

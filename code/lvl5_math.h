@@ -214,8 +214,8 @@ v2 v2_project(v2 a, v2 b) {
 
 v2 v2_rotate(v2 a, f32 angle) {
   v2 result;
-  result.x = a.x*cos_f32(angle) + a.y*sin_f32(angle);
-  result.y = -a.x*sin_f32(angle) + a.y*cos_f32(angle);
+  result.x = a.x*cos_f32(-angle) + a.y*sin_f32(-angle);
+  result.y = -a.x*sin_f32(-angle) + a.y*cos_f32(-angle);
   return result;
 }
 
@@ -840,8 +840,8 @@ v4 lerp_v4(v4 a, v4 b, v4 c) {
 b32 point_in_circle(v2 point, v2 origin, f32 radius) {
   b32 result = false;
   
-  f32 dist = v2_length(v2_sub(point, origin));
-  if (dist < radius) {
+  f32 dist_sqr = v2_length_sqr(v2_sub(point, origin));
+  if (dist_sqr < sqr_f32(radius)) {
     result = true;
   }
   return result;
