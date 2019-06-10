@@ -5,15 +5,7 @@
 #include "renderer.h"
 #include "lvl5_random.h"
 #include "font.h"
-#include "audio.h"
-
-typedef enum {
-  Entity_Type_NONE,
-  Entity_Type_PLAYER,
-  Entity_Type_ENEMY,
-  Entity_Type_BOX,
-} Entity_Type;
-
+#include "sound.h"
 
 typedef struct {
   f32 position;  // 0 - 1
@@ -88,16 +80,61 @@ typedef struct {
   Collider_Type type;
 } Collider;
 
+
+typedef enum {
+  Skill_Type_NONE,
+  Skill_Type_FIREBALL,
+  Skill_Type_BLINK,
+  Skill_Type_BOMB,
+  Skill_Type_LIGHTNING,
+} Skill_Type;
+
+typedef enum {
+  Rune_Type_NONE,
+  Rune_Type_DOUBLE_DAMAGE,
+  Rune_Type_HALF_COST,
+} Rune_Type;
+
+typedef struct {
+  Skill_Type type;
+  f32 damage;
+  
+  Rune_Type runes[3];
+  f32 mp_cost;
+} Skill;
+
+typedef struct {
+  b32 active;
+  f32 time;
+} Lifetime;
+
+typedef struct {
+  f32 v;
+  f32 max;
+  f32 regen;
+} Resource;
+
 typedef struct {
   i32 index;
-  Entity_Type type;
   b32 is_active;
+  
   Transform t;
-  v3 dp;
+  v3 d_p;
   f32 d_angle;
   
   Collider collider;
-  b32 is_colliding;
+  Skill skills[4];
+  
+  Resource hp;
+  Resource mp;
+  
+  f32 contact_damage;
+  
+  v2 target_p;
+  b32 player_controller;
+  f32 friction;
+  
+  Lifetime lifetime;
 } Entity;
 
 
@@ -136,8 +173,7 @@ typedef struct {
   Rand rand;
   u32 frame_count;
   
-  i32 selected_entity;
-  v2 start_p;
+  Camera camera;
 } State;
 
 

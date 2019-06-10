@@ -12,6 +12,7 @@ out vec2 fr_tex_coord;
 out vec4 fr_color;
 
 uniform mat4x4 u_view;
+//uniform mat4x4 u_projection;
 
 void main() {
   vec4 p = u_view*inst_model*vec4(v_pos, 1.0f);

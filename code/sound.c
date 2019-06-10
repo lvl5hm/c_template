@@ -1,4 +1,4 @@
-#include "audio.h"
+#include "sound.h"
 #include "lvl5_intrinsics.h"
 
 typedef u32 Riff_Id;

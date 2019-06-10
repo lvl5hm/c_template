@@ -683,6 +683,8 @@ void win32_init_opengl(HWND window) {
   wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
   wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
   
+  
+#if 0
   {
     // NOTE(lvl5): now we need to create an actual context
     int attributes[] = {
@@ -714,6 +716,7 @@ void win32_init_opengl(HWND window) {
     assert(context_made_current);
     wglDeleteContext(fake_context);
   }
+#endif
   
   b32 interval_set = wglSwapIntervalEXT(1);
   
@@ -955,17 +958,21 @@ int CALLBACK WinMain(HINSTANCE instance,
           game_input.mouse.scroll = GET_WHEEL_DELTA_WPARAM(message.wParam)/WHEEL_DELTA;
         } break;
         
+        case WM_RBUTTONDOWN: {
+          win32_handle_button(&game_input.mouse.right, true);
+          win32_handle_button(&game_input.skills[1], true);
+        } break;
         case WM_LBUTTONDOWN: {
-          if (message.wParam & MK_RBUTTON)
-            win32_handle_button(&game_input.mouse.right, true);
-          else
-            win32_handle_button(&game_input.mouse.left, true);
+          win32_handle_button(&game_input.mouse.left, true);
+          win32_handle_button(&game_input.skills[0], true);
         } break;
         case WM_LBUTTONUP: {
-          if (message.wParam & MK_RBUTTON)
-            win32_handle_button(&game_input.mouse.right, false);
-          else
-            win32_handle_button(&game_input.mouse.left, false);
+          win32_handle_button(&game_input.mouse.left, false);
+          win32_handle_button(&game_input.skills[0], false);
+        } break;
+        case WM_RBUTTONUP: {
+          win32_handle_button(&game_input.mouse.right, false);
+          win32_handle_button(&game_input.skills[1], false);
         } break;
         
         case WM_KEYDOWN:
@@ -1014,6 +1021,13 @@ int CALLBACK WinMain(HINSTANCE instance,
             win32_handle_button(&game_input.move_down, key_is_down);
             break;
             
+            
+            case 'Q':
+            win32_handle_button(&game_input.skills[2], key_is_down);
+            break;
+            case 'E':
+            win32_handle_button(&game_input.skills[3], key_is_down);
+            break;
             case 'A':
             win32_handle_button(&game_input.move_left, key_is_down);
             break;

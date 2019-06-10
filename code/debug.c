@@ -52,7 +52,7 @@ void debug_init(Arena *temp, byte *debug_memory) {
                        const_string("fonts/Inconsolata-Regular.ttf"));
   
   // NOTE(lvl5): variables
-  debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 1};
+  debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 0};
   debug_state->vars[Debug_Var_Name_COLLIDERS] = (Debug_Var){const_string("colliders"), 1};
   debug_state->vars[Debug_Var_Name_MEMORY] = (Debug_Var){const_string("memory"), 0};
   
@@ -159,7 +159,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   Render_Group _debug_render_group;
   Render_Group *group = &_debug_render_group;
   
-  render_group_init(&debug_state->arena, state, group, 10000, screen_size); 
+  render_group_init(&debug_state->arena, state, group, 10000, &state->camera, screen_size); 
   render_font(group, &gui->font);
   
   v2 screen_meters = v2_div_s(screen_size, PIXELS_PER_METER);

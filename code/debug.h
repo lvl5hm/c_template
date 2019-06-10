@@ -1,5 +1,7 @@
 #ifndef DEBUG_H
 
+#include "lvl5_string.h"
+
 typedef enum {
   Debug_Type_NONE,
   Debug_Type_BEGIN_TIMER,

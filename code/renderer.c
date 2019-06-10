@@ -163,6 +163,21 @@ void push_rect_outline(Render_Group *group, rect2 rect, f32 thick) {
                                  rect.max));
 }
 
+f32 text_get_size(Render_Group *group, String text) {
+  f32 result = 0;
+  for (u32 char_index = 0; char_index < text.count; char_index++) {
+    char ch = text.data[char_index];
+    Sprite spr = font_get_sprite(group->state.font, ch);
+    rect2 rect = sprite_get_rect(spr);
+    v2 size_pixels = v2_hadamard(rect2_get_size(rect), 
+                                 V2((f32)spr.atlas->bmp.width,
+                                    (f32)spr.atlas->bmp.height));
+    v2 size_meters = v2_div_s(size_pixels, PIXELS_PER_METER);
+    result += size_meters.x;
+  }
+  return result;
+}
+
 void push_text(Render_Group *group, String text) {
   DEBUG_FUNCTION_BEGIN();
   
@@ -274,7 +289,7 @@ void quad_renderer_destroy(Quad_Renderer *renderer) {
 }
 
 void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp,
-                        mat4x4 model_mat, Quad_Instance *instances, u32 instance_count) {
+                        mat4x4 view_mat, Quad_Instance *instances, u32 instance_count) {
   DEBUG_FUNCTION_BEGIN();
   
   DEBUG_SECTION_BEGIN(_buffer_data);
@@ -290,7 +305,7 @@ void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp,
   
   
   gl.UseProgram(renderer->shader);
-  gl_set_uniform_mat4x4(gl, renderer->shader, "u_view", &model_mat, 1);
+  gl_set_uniform_mat4x4(gl, renderer->shader, "u_view", &view_mat, 1);
   
   DEBUG_SECTION_BEGIN(_draw_call);
   gl.BindVertexArray(renderer->vao);
@@ -302,14 +317,14 @@ void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp,
 
 
 
-
 void render_group_init(Arena *arena, State *state, Render_Group *group,
-                       i32 item_capacity, v2 screen_size) {
+                       i32 item_capacity, Camera *camera, v2 screen_size) {
   DEBUG_FUNCTION_BEGIN();
   
   group->items = arena_push_array(arena, Render_Item, item_capacity);
   group->item_count = 0;
   group->screen_size = screen_size;
+  group->camera = camera;
   group->state.matrix = mat4x4_identity();
   group->state.color = V4(1, 1, 1, 1);
   group->item_capacity = item_capacity;
@@ -317,6 +332,17 @@ void render_group_init(Arena *arena, State *state, Render_Group *group,
   group->debug_atlas = &state->debug_atlas;
   
   DEBUG_FUNCTION_END();
+}
+
+mat4x4 camera_get_matrix(Camera *camera, v2 screen_size) {
+  Transform t = camera->t;
+  mat4x4 result = mat4x4_identity();
+  result = mat4x4_scale(result, V3(2, 2, 1));
+  result = mat4x4_scale(result, v3_invert(t.scale));
+  result = mat4x4_rotate(result, -t.angle);
+  result = mat4x4_translate(result, v3_mul_s(t.p, -1));
+  
+  return result;
 }
 
 void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *renderer) {
@@ -339,17 +365,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           
           // TODO(lvl5): remove duplicate code
           if (atlas && atlas != sprite.atlas) {
-            v2 screen_size_v2 = group->screen_size;
-            v2 screen_size_in_meters = v2_div_s(screen_size_v2, PIXELS_PER_METER);
-            v2 gl_units_per_meter = v2_mul_s(v2_invert(screen_size_in_meters), 2);
-            
-            Transform view_transform;
-            view_transform.p = V3(0, 0, 0);
-            view_transform.angle = 0;
-            view_transform.scale = v2_to_v3(gl_units_per_meter, 1.0f);
-            
-            mat4x4 view_matrix = transform_apply(mat4x4_identity(), 
-                                                 view_transform);
+            mat4x4 view_matrix = camera_get_matrix(group->camera, group->screen_size);
             quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
                                instances, instance_count);
             instance_count = 0;
@@ -379,16 +395,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
     }
     DEBUG_SECTION_END(_push_instances);
     
-    v2 screen_size_v2 = group->screen_size;
-    v2 screen_size_in_meters = v2_div_s(screen_size_v2, PIXELS_PER_METER);
-    v2 gl_units_per_meter = v2_mul_s(v2_invert(screen_size_in_meters), 2);
-    
-    Transform view_transform;
-    view_transform.p = V3(0, 0, 0);
-    view_transform.angle = 0;
-    view_transform.scale = v2_to_v3(gl_units_per_meter, 1.0f);
-    
-    mat4x4 view_matrix = transform_apply(mat4x4_identity(), view_transform);
+    mat4x4 view_matrix = camera_get_matrix(group->camera, group->screen_size);
     quad_renderer_draw(renderer, &atlas->bmp, view_matrix, 
                        instances, instance_count);
   }

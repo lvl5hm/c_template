@@ -24,7 +24,7 @@ void zero_memory_slow(void *dst, u64 size) {
   for (u64 i = 0; i < size; i++) {
     ((byte *)dst)[i] = 0;
   }
-}
+} 
 
 void arena_init(Arena *arena, void *data, u64 capacity) {
   arena->data = (byte *)data;
@@ -33,13 +33,13 @@ void arena_init(Arena *arena, void *data, u64 capacity) {
 }
 
 #define arena_push_array(arena, T, count) \
-(T *)_arena_push_memory(arena, sizeof(T)*count, 4)
+(T *)_arena_push_memory(arena, sizeof(T)*count, 16)
 
 #define arena_push_struct(arena, T) \
-(T *)_arena_push_memory(arena, sizeof(T), 4)
+(T *)_arena_push_memory(arena, sizeof(T), 16)
 
 #define arena_push_size(arena, size) \
-_arena_push_memory(arena, size, 4)
+_arena_push_memory(arena, size, 16)
 
 byte *_arena_push_memory(Arena *arena, u64 size, u64 align) {
   byte *result = 0;

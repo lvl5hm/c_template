@@ -34,13 +34,15 @@ typedef struct {
   Mouse mouse;
   
   union {
-    Button buttons[5];
+    Button buttons[9];
     struct {
       Button move_left;
       Button move_right;
       Button move_up;
       Button move_down;
       Button start;
+      
+      Button skills[4];
     };
   };
   

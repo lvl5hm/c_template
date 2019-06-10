@@ -11,7 +11,7 @@
 #include "stb_truetype.h"
 
 #include "debug.c"
-#include "audio.c"
+#include "sound.c"
 
 /*
 TODO:
@@ -44,11 +44,11 @@ audio_state.sound_count to 64
  -[ ] b-splines (bezier curves)
  
  [ ] text rendering
- -[ ] kerning (i added this, but for some reason sbt doesn't return good kerning)
+ -[ ] kerning (i added this, but for some reason stb doesn't return good kerning)
  -[ ] line spacing
  -[ ] utf-8 support
  -[ ] rendering needs to be way more optimized
- -[ ] loading fonts from windows instead of stb??
+ -[ ] loading fonts from windows instead of stb
  
  [ ] windows layer
  -[x] proper opengl context creation for multisampling
@@ -72,13 +72,14 @@ audio_state.sound_count to 64
  -[ ] streaming?
  -[ ] splitting bit sounds into chunks?
  
- [ ] sounds
+ [x] sounds
  -[x] basic mixer
  -[x] volume
  -[x] speed shifting
  -[x] SSE?
  
  ---- GAME ----
+ [ ] camera
  [ ] basic player movement
  [ ] player active abilities
  [ ] ability rune examples
@@ -96,7 +97,7 @@ audio_state.sound_count to 64
  
  [ ] collision
  -[x] SAT
- -[ ] GJK
+ -[x] GJK
  -[ ] removed 2D physics stuff for now. If I decide to go full physics,
  I would probably need to do GJK/EPA/find contact manifold using some method
  and I need to learn A LOT about rigidbody simulation if I want proper physics
@@ -130,7 +131,7 @@ Entity *get_entity(State *state, i32 index) {
   return result;
 }
 
-Entity *add_entity(State *state, Entity_Type type) {
+Entity *add_entity(State *state) {
   assert(state->entity_count < array_count(state->entities));
   
   i32 index;
@@ -144,7 +145,6 @@ Entity *add_entity(State *state, Entity_Type type) {
   zero_memory_slow(e, sizeof(Entity));
   
   e->is_active = true;
-  e->type = type;
   e->t = transform_default();
   e->index = index;
   
@@ -152,30 +152,41 @@ Entity *add_entity(State *state, Entity_Type type) {
 }
 
 Entity *add_entity_player(State *state) {
-  Entity *e = add_entity(state, Entity_Type_PLAYER);
-  e->t.scale = V3(0.2f, 0.6f, 0.2f);
-#if 1
+  Entity *e = add_entity(state);
+  
+  e->hp.v = 10;
+  e->mp.v = 10;
+  e->hp.max = 10;
+  e->mp.max = 10;
+  e->hp.regen = 0;
+  e->mp.regen = 1.0f;
+  
   e->collider.box.rect = rect2_center_size(V2(0, 0), V2(1, 1));
   e->collider.type = Collider_Type_BOX;
-#else
-  e->collider.circle.r = 0.5f;
-  e->collider.circle.origin = v2_zero();
-  e->collider.type = Collider_Type_CIRCLE;
-#endif
+  e->player_controller = true;
+  e->friction = 0.92f;
+  
+  e->skills[0] = (Skill){
+    .type = Skill_Type_FIREBALL,
+    .damage = 1,
+    .mp_cost = 2.0f,
+  };
+  
+  e->skills[1] = (Skill){
+    .type = Skill_Type_BLINK,
+    .mp_cost = 4.0f,
+  };
   
   return e;
 }
 
 Entity *add_entity_box(State *state) {
-  Entity *e = add_entity(state, Entity_Type_PLAYER);
-  
-  
+  Entity *e = add_entity(state);
   return e;
 }
 
-
 Entity *add_entity_enemy(State *state) {
-  Entity *e = add_entity(state, Entity_Type_ENEMY);
+  Entity *e = add_entity(state);
   e->t.scale.xy = V2(3.0f, 0.5f);
 #if 0
   e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
@@ -185,6 +196,18 @@ Entity *add_entity_enemy(State *state) {
   e->collider.circle.origin = V2(0, 0);
   e->collider.type = Collider_Type_CIRCLE;
 #endif
+  
+  return e;
+}
+
+Entity *add_entity_fireball(State *state) {
+  Entity *e = add_entity(state);
+  
+  
+  e->collider.circle.r = 0.3f;
+  e->collider.type = Collider_Type_CIRCLE;
+  e->lifetime.active = true;
+  e->lifetime.time = 3.0f;
   
   return e;
 }
@@ -430,16 +453,12 @@ v2 gjk_collider_get_max(v2 direction, Collider coll, Transform t) {
 }
 
 v2 gjk_support(v2 direction, Collider a, Transform a_t, Collider b, Transform b_t) {
+  DEBUG_FUNCTION_BEGIN();
   v2 a_max = gjk_collider_get_max(direction, a, a_t);
   v2 b_max = gjk_collider_get_max(v2_negate(direction), b, b_t);
   
-#if 0
-  v2 size = V2(0.1f, 0.1f);
-  push_rect(global_group, rect2_center_size(a_max, size));
-  push_rect(global_group, rect2_center_size(b_max, size));
-#endif
-  
   v2 result = v2_sub(a_max, b_max);
+  DEBUG_FUNCTION_END();
   return result;
 }
 
@@ -526,6 +545,19 @@ b32 gjk_collide(Collider a_coll, Transform a_t,
   return result;
 }
 
+String tsprintf(Arena *arena, char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  
+  char *buffer = arena_push_array(arena, char, 256);
+  vsprintf_s(buffer, 256, fmt, args);
+  String result = make_string(buffer, c_string_length(buffer));
+  
+  va_end(args);
+  
+  return result;
+}
+
 b32 gjk_collide_point(v2 point, Collider a_coll, Transform a_t) {
   Collider b_coll;
   b_coll.type = Collider_Type_POINT;
@@ -534,7 +566,46 @@ b32 gjk_collide_point(v2 point, Collider a_coll, Transform a_t) {
   return result;
 }
 
-#define SCRATCH_SIZE kilobytes(32)
+b32 skill_use(State *state, Entity *e, Skill *skill) {
+  b32 result = false;
+  
+  f32 cost = skill->mp_cost;
+  f32 damage = skill->damage;
+  
+  for (i32 rune_index = 0; rune_index < array_count(skill->runes); rune_index++) {
+    Rune_Type rune = skill->runes[rune_index];
+    switch (rune) {
+      case Rune_Type_HALF_COST: {
+        cost *= 0.5f;
+      } break;
+      case Rune_Type_DOUBLE_DAMAGE: {
+        damage *= 2;
+      } break;
+    }
+  }
+  
+  if (e->mp.v >= cost) {
+    e->mp.v -= cost;
+    result = true;
+    switch (skill->type) {
+      case Skill_Type_BLINK: {
+        e->t.p.xy = e->target_p;
+      } break;
+      
+      case Skill_Type_FIREBALL: {
+        Entity *ball = add_entity_fireball(state);
+        ball->t.p = e->t.p;
+        
+        v2 dir = v2_sub(e->target_p, e->t.p.xy);
+        ball->t.angle = atan2_f32(dir.y, dir.x);
+        ball->d_p = v2_to_v3(v2_mul_s(v2_unit(dir), 5.0f), 0);
+        ball->contact_damage = damage;
+      } break;
+    }
+  }
+  
+  return result;
+}
 
 extern GAME_UPDATE(game_update) {
   State *state = (State *)memory.perm;
@@ -546,6 +617,7 @@ extern GAME_UPDATE(game_update) {
     platform = _platform;
     gl = _platform.gl;
     
+#define SCRATCH_SIZE kilobytes(32)
     arena_init(&state->scratch, memory.temp, SCRATCH_SIZE);
     arena_init(&state->temp, memory.temp + SCRATCH_SIZE, 
                memory.temp_size - SCRATCH_SIZE);
@@ -561,8 +633,6 @@ extern GAME_UPDATE(game_update) {
     state->test_sound = load_wav(&state->temp, 
                                  const_string("sounds/durarara.wav"));
     state->snd_bop = load_wav(&state->temp, const_string("sounds/bop.wav"));
-    
-    //Playing_Sound *snd = sound_play(&state->sound_state, &state->test_sound, Sound_Type_MUSIC);
     
     debug_add_arena(&state->arena, const_string("main"));
     debug_add_arena(&state->temp, const_string("temp"));
@@ -606,15 +676,14 @@ extern GAME_UPDATE(game_update) {
     gl.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
     quad_renderer_init(&state->renderer, state);
-    add_entity(state, Entity_Type_NONE); // filler entity
+    add_entity(state); // filler entity
     add_entity_player(state);
-    Entity *e = add_entity_enemy(state);
-    //e->t.p.x = 2;
-    //e->t.scale.x = 2.0f;
+    
     
     
 #include "robot_animation.h"
     
+    zero_memory_slow(&state->camera, sizeof(Camera));
     state->is_initialized = true;
   }
   
@@ -630,12 +699,18 @@ extern GAME_UPDATE(game_update) {
     input = &state->empty_input;
   }
   
+#if 0  
+  if (state->sound_state.sound_count == 0) {
+    Playing_Sound *snd = sound_play(&state->sound_state, &state->snd_bop, Sound_Type_MUSIC);
+  }
+#endif
   
+  state->camera.t.scale = v2_to_v3(v2_div_s(screen_size, PIXELS_PER_METER), 1);
   
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group _group;
   Render_Group *group = &_group;
-  render_group_init(&state->temp, state, group, 100000, screen_size);
+  render_group_init(&state->temp, state, group, 100000, &state->camera, screen_size);
   
   global_group = group;
   render_font(group, &state->font);
@@ -643,96 +718,94 @@ extern GAME_UPDATE(game_update) {
 #if 1
   //v2 half_screen_meters = v2_div_s(screen_size, PIXELS_PER_METER*2);
   v2 mouse_meters = get_mouse_p_meters(input, screen_size);
-#endif
-#if 0
-  {
-    char buffer[256];
-    sprintf_s(buffer, array_count(buffer), "wheel: %d", input->mouse.scroll);
-    String str = from_c_string(buffer);
-    push_text(group, str);
-  }
+  v2 mouse_world = v2_add(state->camera.t.p.xy, mouse_meters);
 #endif
   
   
-  if (state->selected_entity) {
-    Entity *e = get_entity(state, state->selected_entity);
-    e->t.p.xy = v2_sub(mouse_meters, state->start_p);
-    if (input->mouse.scroll) {
-      e->t.angle += input->mouse.scroll*0.1f;
+  
+  for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
+    Entity *e = get_entity(state, entity_index);
+    if (!e) continue;
+    
+    e->t.p = v3_add(e->t.p, v3_mul_s(e->d_p, dt));
+    
+    if (e->player_controller) {
+      v2 move_dir = v2_i(input->move_right.is_down - input->move_left.is_down,
+                         input->move_up.is_down - input->move_down.is_down);
+      f32 move_dir_len = v2_length(move_dir);
+      if (move_dir_len) {
+        move_dir = v2_div_s(move_dir, move_dir_len);
+      }
+      
+      v2 d_d_p = v2_mul_s(move_dir, 1.0f);
+      e->d_p = v3_add(e->d_p, v2_to_v3(d_d_p, 0));
+      e->target_p = mouse_world;
+      e->d_p = v3_mul_s(e->d_p, e->friction);
+      
+      for (i32 skill_index = 0; 
+           skill_index < array_count(e->skills);
+           skill_index++) {
+        Skill *skill = e->skills + skill_index;
+        Button btn = input->skills[skill_index];
+        if (btn.went_up) {
+          b32 use_success = skill_use(state, e, skill);
+        }
+      }
+      
+      state->camera.t.p = e->t.p;
     }
-  }
-  
-  if (input->mouse.left.went_up) {
-    state->selected_entity = 0;
-  }
-  for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
-    Entity *entity = get_entity(state, entity_index);
-    entity->is_colliding = false;
-  }
-  
-  for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
-    Entity *entity = get_entity(state, entity_index);
     
-    v4 collider_color = V4(1, 0, 0, 1);
-    
-    if (gjk_collide_point(mouse_meters, entity->collider, entity->t)) {
-      collider_color = V4(0, 0, 1, 1);
-      if (input->mouse.left.went_down) {
-        state->selected_entity = entity_index;
-        state->start_p = v2_sub(mouse_meters, entity->t.p.xy);
+    if (e->lifetime.active) {
+      e->lifetime.time -= dt;
+      if (e->lifetime.time <= 0) {
+        remove_entity(state, entity_index);
       }
     }
     
-    switch (entity->type) {
-      case Entity_Type_PLAYER: {
-        
-        
-        
-        
-        for (i32 other_index = entity_index+1;
-             other_index < state->entity_count;
-             other_index++) {
-          Entity *other = get_entity(state, other_index);
-          if (gjk_collide(entity->collider, entity->t,
-                          other->collider, other->t)) {
-            //collider_color = V4(0, 1, 0, 1);
-            entity->is_colliding = true;
-            other->is_colliding = true;
-          }
-        }
-      } break;
-      
-      case Entity_Type_ENEMY: {
-        if (input->start.is_down) {
-          entity->t.angle += 1.0f*dt;
-        }
-        v2 move_dir = v2_i(input->move_right.is_down - input->move_left.is_down,
-                           input->move_up.is_down - input->move_down.is_down);
-        v2 dp = v2_mul_s(move_dir, dt);
-        entity->t.p = v3_add(entity->t.p, v2_to_v3(dp, 0));
-      } break;
+    
+    e->hp.v += e->hp.regen*dt;
+    e->mp.v += e->mp.regen*dt;
+    
+    if (e->hp.v > e->hp.max) {
+      e->hp.v = e->hp.max;
     }
+    if (e->mp.v > e->mp.max) {
+      e->mp.v = e->mp.max;
+    }
+    
+    
+    // NOTE(lvl5): draw hp and mp
+    String hp_string = tsprintf(&state->scratch, "HP: %.02f", e->hp.v);
+    f32 hp_string_width = text_get_size(group, hp_string);
+    
+    String mp_string = tsprintf(&state->scratch, "MP: %.02f", e->mp.v);
+    f32 mp_string_width = text_get_size(group, mp_string);
+    
+    render_save(group);
+    render_translate(group, v3_add(e->t.p, V3(-hp_string_width*0.5f, 0.8f, 0)));
+    push_text(group, hp_string);
+    
+    render_translate(group, V3(0, -0.2f, 0));
+    push_text(group, mp_string);
+    
+    render_restore(group);
+    
+    render_save(group);
+    render_transform(group, e->t);
     
     if (debug_get_var_i32(Debug_Var_Name_COLLIDERS)) {
-      render_save(group);
-      render_transform(group, entity->t);
-      render_color(group, collider_color);
-      if (entity->is_colliding) {
-        render_color(group, V4(0, 1, 0, 1));
-      }
-      
-      switch (entity->collider.type) {
+      switch (e->collider.type) {
         case Collider_Type_BOX: {
-          push_rect_outline(group, entity->collider.box.rect, 0.04f);
+          push_rect_outline(group, e->collider.box.rect, 0.04f);
         } break;
         case Collider_Type_CIRCLE: {
-          Circle_Collider coll = entity->collider.circle;
+          Circle_Collider coll = e->collider.circle;
           push_circle_outline(group, coll.origin, coll.r, 0.04f);
         } break;
         default: assert(false);
       }
-      render_restore(group);
     }
+    render_restore(group);
   }
   
   DEBUG_SECTION_BEGIN(_glClear);

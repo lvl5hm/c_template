@@ -70,14 +70,19 @@ typedef struct {
 } Render_Item;
 
 typedef struct {
+  Transform t;
+} Camera;
+
+typedef struct {
   Texture_Atlas *debug_atlas;
   Render_Item *items;
   i32 item_count;
   i32 item_capacity;
+  
   v2 screen_size;
+  Camera *camera;
   
   Render_State state;
-  
   Render_State state_stack[16];
   i32 state_stack_count;
 } Render_Group;

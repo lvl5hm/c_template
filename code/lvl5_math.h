@@ -4,6 +4,7 @@
 #include "lvl5_intrinsics.h"
 #include "math.h"
 
+
 #define PI 3.14159265359f
 
 #define U8_MIN 0x0
@@ -340,6 +341,14 @@ v3 v2_to_v3(v2 a, f32 z) {
 }
 
 
+v3 v3_negate(v3 a) {
+  v3 result;
+  result.x = -a.x;
+  result.y = -a.y;
+  result.z = -a.z;
+  return result;
+}
+
 v3 v3_zero() {return V3(0, 0, 0);}
 v3 v3_right() {return V3(1, 0, 0);}
 v3 v3_left() {return V3(-1, 0, 0);}
@@ -632,28 +641,70 @@ v4 mat4x4_mul_v4(mat4x4 m, v4 v) {
 
 
 // TODO(lvl5): simd this shit?
-mat4x4 mat4x4_mul_mat4x4(mat4x4 a, mat4x4 b) {
+inline mat4x4 mat4x4_mul_mat4x4(mat4x4 a, mat4x4 b) {
   mat4x4 result;
   
-  result.e00 = a.e00*b.e00 + a.e10*b.e01 + a.e20*b.e02 + a.e30*b.e03;
-  result.e10 = a.e00*b.e10 + a.e10*b.e11 + a.e20*b.e12 + a.e30*b.e13;
-  result.e20 = a.e00*b.e20 + a.e10*b.e21 + a.e20*b.e22 + a.e30*b.e23;
-  result.e30 = a.e00*b.e30 + a.e10*b.e31 + a.e20*b.e32 + a.e30*b.e33;
+  __m128 a00 = _mm_set_ps1(a.e00);
+  __m128 a01 = _mm_set_ps1(a.e01);
+  __m128 a02 = _mm_set_ps1(a.e02);
+  __m128 a03 = _mm_set_ps1(a.e03);
   
-  result.e01 = a.e01*b.e00 + a.e11*b.e01 + a.e21*b.e02 + a.e31*b.e03;
-  result.e11 = a.e01*b.e10 + a.e11*b.e11 + a.e21*b.e12 + a.e31*b.e13;
-  result.e21 = a.e01*b.e20 + a.e11*b.e21 + a.e21*b.e22 + a.e31*b.e23;
-  result.e31 = a.e01*b.e30 + a.e11*b.e31 + a.e21*b.e32 + a.e31*b.e33;
+  __m128 a10 = _mm_set_ps1(a.e10);
+  __m128 a11 = _mm_set_ps1(a.e11);
+  __m128 a12 = _mm_set_ps1(a.e12);
+  __m128 a13 = _mm_set_ps1(a.e13);
   
-  result.e02 = a.e02*b.e00 + a.e12*b.e01 + a.e22*b.e02 + a.e32*b.e03;
-  result.e12 = a.e02*b.e10 + a.e12*b.e11 + a.e22*b.e12 + a.e32*b.e13;
-  result.e22 = a.e02*b.e20 + a.e12*b.e21 + a.e22*b.e22 + a.e32*b.e23;
-  result.e32 = a.e02*b.e30 + a.e12*b.e31 + a.e22*b.e32 + a.e32*b.e33;
+  __m128 a20 = _mm_set_ps1(a.e20);
+  __m128 a21 = _mm_set_ps1(a.e21);
+  __m128 a22 = _mm_set_ps1(a.e22);
+  __m128 a23 = _mm_set_ps1(a.e23);
   
-  result.e03 = a.e03*b.e00 + a.e13*b.e01 + a.e23*b.e02 + a.e33*b.e03;
-  result.e13 = a.e03*b.e10 + a.e13*b.e11 + a.e23*b.e12 + a.e33*b.e13;
-  result.e23 = a.e03*b.e20 + a.e13*b.e21 + a.e23*b.e22 + a.e33*b.e23;
-  result.e33 = a.e03*b.e30 + a.e13*b.e31 + a.e23*b.e32 + a.e33*b.e33;
+  __m128 a30 = _mm_set_ps1(a.e30);
+  __m128 a31 = _mm_set_ps1(a.e31);
+  __m128 a32 = _mm_set_ps1(a.e32);
+  __m128 a33 = _mm_set_ps1(a.e33);
+  
+  __m128 b_row_0 = _mm_load_ps(&b.e00);
+  __m128 b_row_1 = _mm_load_ps(&b.e01);
+  __m128 b_row_2 = _mm_load_ps(&b.e02);
+  __m128 b_row_3 = _mm_load_ps(&b.e03);
+  
+  __m128 res_row_0, res_row_1, res_row_2, res_row_3;
+  {
+    __m128 res_0 = _mm_mul_ps(a00, b_row_0);
+    __m128 res_1 = _mm_mul_ps(a10, b_row_1);
+    __m128 res_2 = _mm_mul_ps(a20, b_row_2);
+    __m128 res_3 = _mm_mul_ps(a30, b_row_3);
+    res_row_0 = _mm_add_ps(res_0, _mm_add_ps(res_1, _mm_add_ps(res_2, res_3)));
+  }
+  {
+    __m128 res_0 = _mm_mul_ps(a01, b_row_0);
+    __m128 res_1 = _mm_mul_ps(a11, b_row_1);
+    __m128 res_2 = _mm_mul_ps(a21, b_row_2);
+    __m128 res_3 = _mm_mul_ps(a31, b_row_3);
+    res_row_1 = _mm_add_ps(res_0, _mm_add_ps(res_1, _mm_add_ps(res_2, res_3)));
+  }
+  {
+    __m128 res_0 = _mm_mul_ps(a02, b_row_0);
+    __m128 res_1 = _mm_mul_ps(a12, b_row_1);
+    __m128 res_2 = _mm_mul_ps(a22, b_row_2);
+    __m128 res_3 = _mm_mul_ps(a32, b_row_3);
+    res_row_2 = _mm_add_ps(res_0, _mm_add_ps(res_1, _mm_add_ps(res_2, res_3)));
+  }
+  {
+    __m128 res_0 = _mm_mul_ps(a03, b_row_0);
+    __m128 res_1 = _mm_mul_ps(a13, b_row_1);
+    __m128 res_2 = _mm_mul_ps(a23, b_row_2);
+    __m128 res_3 = _mm_mul_ps(a33, b_row_3);
+    res_row_3 = _mm_add_ps(res_0, _mm_add_ps(res_1, _mm_add_ps(res_2, res_3)));
+  }
+  
+  __m128 *res = (__m128 *)&result;
+  res[0] = res_row_0;
+  res[1] = res_row_1;
+  res[2] = res_row_2;
+  res[3] = res_row_3;
+  
   return result;
 }
 
@@ -667,9 +718,9 @@ mat4x4 mat4x4_identity() {
 
 mat4x4 mat4x4_scale(mat4x4 m, v3 scale) {
   mat4x4 scale_m = Mat4x4(scale.x, 0,         0,         0,
-                          0,         scale.y, 0,         0,
-                          0,         0,         scale.z, 0,
-                          0,         0,         0,         1.0f);
+                          0,       scale.y,   0,         0,
+                          0,       0,         scale.z,   0,
+                          0,       0,         0,         1.0f);
   
   mat4x4 result = mat4x4_mul_mat4x4(m, scale_m);
   return result;
