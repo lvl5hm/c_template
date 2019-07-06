@@ -23,9 +23,9 @@ typedef enum {
 
 
 v2 get_mouse_p_meters(Input *input, v2 screen_size) {
-  v2 screen_size_meters = v2_div_s(screen_size, PIXELS_PER_METER);
-  v2 half_screen_size_meters = v2_div_s(screen_size_meters, 2);
-  v2 mouse_p_meters = v2_sub(v2_div_s(input->mouse.p, PIXELS_PER_METER),
+  v2 screen_size_meters = v2_div(screen_size, PIXELS_PER_METER);
+  v2 half_screen_size_meters = v2_div(screen_size_meters, 2);
+  v2 mouse_p_meters = v2_sub(v2_div(input->mouse.p, PIXELS_PER_METER),
                              half_screen_size_meters);
   return mouse_p_meters;
 }
@@ -107,9 +107,9 @@ void debug_draw_terminal(Debug_Terminal *term, Render_Group *group, Input *input
   }
   
   if (input->keys[Key_Code_RIGHT].pressed) {
-    term->cursor = clip_i32(term->cursor + 1, 1, term->input_count);;
+    term->cursor = clamp_i32(term->cursor + 1, 1, term->input_count);;
   } else if (input->keys[Key_Code_LEFT].pressed) {
-    term->cursor = clip_i32(term->cursor - 1, 1, term->input_count);;
+    term->cursor = clamp_i32(term->cursor - 1, 1, term->input_count);;
   }
   
   if (input->keys[Key_Code_ENTER].went_down) {
@@ -162,7 +162,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   render_group_init(&debug_state->arena, state, group, 10000, &state->camera, screen_size); 
   render_font(group, &gui->font);
   
-  v2 screen_meters = v2_div_s(screen_size, PIXELS_PER_METER);
+  v2 screen_meters = v2_div(screen_size, PIXELS_PER_METER);
   debug_draw_terminal(&gui->terminal, group, input, screen_meters);
   
   if (debug_get_var_i32(Debug_Var_Name_MEMORY) != 0) {

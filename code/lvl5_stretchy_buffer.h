@@ -1,7 +1,7 @@
 #ifndef LVL5_STRETCHY_BUFFER
 #define LVL5_STRETCHY_BUFFER_VERSION 0
 
-#include "lvl5_alloc.h"
+#include "lvl5_arena.h"
 
 typedef struct {
   u32 count;

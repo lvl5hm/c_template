@@ -153,13 +153,13 @@ u32 gl_create_shader(Arena *arena, gl_Funcs gl, String vertex_src, String fragme
   return program;
 }
 
-void gl_set_uniform_mat3x3(gl_Funcs gl, GLint program, char *name, mat3x3 *value, u32 count) {
+void gl_set_uniform_mat3(gl_Funcs gl, GLint program, char *name, mat3 *value, u32 count) {
   GLint uniform_loc = gl.GetUniformLocation(program, name);
   gl.UniformMatrix3fv(uniform_loc, count, GL_TRUE, (GLfloat *)value);
 }
 
 
-void gl_set_uniform_mat4x4(gl_Funcs gl, GLint program, char *name, mat4x4 *value, u32 count) {
+void gl_set_uniform_mat4(gl_Funcs gl, GLint program, char *name, mat4 *value, u32 count) {
   GLint uniform_loc = gl.GetUniformLocation(program, name);
   gl.UniformMatrix4fv(uniform_loc, count, GL_TRUE, (GLfloat *)value);
 }

@@ -96,7 +96,7 @@ Playing_Sound *sound_play(Sound_State *sound_state, Sound *wav, Sound_Type type)
 void sound_set_volume(Playing_Sound *snd, v2 target_volume, f32 seconds) {
   snd->target_volume = target_volume;
   if (seconds) {
-    snd->volume_change_per_second = v2_div_s(v2_sub(target_volume, snd->volume), seconds);
+    snd->volume_change_per_second = v2_div(v2_sub(target_volume, snd->volume), seconds);
   } else {
     snd->volume = snd->target_volume;
   }
@@ -160,8 +160,8 @@ void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
     
     assert(samples_to_mix > 0);
     
-    v2 volume_change_per_frame = v2_mul_s(v2_sub(snd->target_volume, snd->volume), dt);
-    v2 volume_change_per_sample = v2_div_s(volume_change_per_frame, (f32)samples_to_mix);
+    v2 volume_change_per_frame = v2_mul(v2_sub(snd->target_volume, snd->volume), dt);
+    v2 volume_change_per_sample = v2_div(volume_change_per_frame, (f32)samples_to_mix);
     
     __m128 speed_4 = _mm_set_ps1(snd->speed);
     __m128 initial_pos_4 = _mm_set_ps1(snd->position);

@@ -3,20 +3,20 @@
 #define PIXELS_PER_METER 96
 #include "font.c"
 
-mat4x4 transform_apply(mat4x4 matrix, Transform t) {
-  mat4x4 result = matrix;
-  result = mat4x4_translate(result, t.p);
-  result = mat4x4_rotate(result, t.angle);
-  result = mat4x4_scale(result, t.scale);
+mat4 transform_apply(mat4 matrix, Transform t) {
+  mat4 result = matrix;
+  result = mat4_translate(result, t.p);
+  result = mat4_rotate(result, t.angle);
+  result = mat4_scale(result, t.scale);
   
   return result;
 }
 
-mat4x4 transform_apply_inverse(mat4x4 matrix, Transform t) {
-  mat4x4 result = matrix;
-  result = mat4x4_scale(result, v3_invert(t.scale));
-  result = mat4x4_rotate(result, -t.angle);
-  result = mat4x4_translate(result, v3_mul_s(t.p, -1));
+mat4 transform_apply_inverse(mat4 matrix, Transform t) {
+  mat4 result = matrix;
+  result = mat4_scale(result, v3_invert(t.scale));
+  result = mat4_rotate(result, -t.angle);
+  result = mat4_translate(result, v3_mul(t.p, -1));
   
   return result;
 }
@@ -41,15 +41,15 @@ void render_restore(Render_Group *group) {
 }
 
 void render_translate(Render_Group *group, v3 p) {
-  group->state.matrix = mat4x4_translate(group->state.matrix, p);
+  group->state.matrix = mat4_translate(group->state.matrix, p);
 }
 
 void render_scale(Render_Group *group, v3 scale) {
-  group->state.matrix = mat4x4_scale(group->state.matrix, scale);
+  group->state.matrix = mat4_scale(group->state.matrix, scale);
 }
 
 void render_rotate(Render_Group *group, f32 angle) {
-  group->state.matrix = mat4x4_rotate(group->state.matrix, angle);
+  group->state.matrix = mat4_rotate(group->state.matrix, angle);
 }
 
 void render_transform(Render_Group *group, Transform t) {
@@ -93,7 +93,7 @@ void push_sprite(Render_Group *group, Sprite sprite, Transform t) {
   
   render_save(group);
   render_transform(group, t);
-  render_translate(group, v2_to_v3(v2_mul_s(sprite.origin, -1), 0));
+  render_translate(group, v2_to_v3(v2_mul(sprite.origin, -1), 0));
   
   Render_Sprite *item = push_render_item(group, Sprite);
   item->sprite = sprite;
@@ -144,7 +144,7 @@ void push_circle_outline(Render_Group *group, v2 center, f32 radius, f32 thick) 
     f32 angle_start = segment_index*angle_per_segment;
     f32 angle_end = (segment_index+1)*angle_per_segment;
     
-    v2 r = v2_mul_s(v2_right(), radius);
+    v2 r = v2_mul(v2_right(), radius);
     v2 start = v2_add(center, v2_rotate(r, angle_start));
     v2 end = v2_add(center, v2_rotate(r, angle_end));
     
@@ -172,7 +172,7 @@ f32 text_get_size(Render_Group *group, String text) {
     v2 size_pixels = v2_hadamard(rect2_get_size(rect), 
                                  V2((f32)spr.atlas->bmp.width,
                                     (f32)spr.atlas->bmp.height));
-    v2 size_meters = v2_div_s(size_pixels, PIXELS_PER_METER);
+    v2 size_meters = v2_div(size_pixels, PIXELS_PER_METER);
     result += size_meters.x;
   }
   return result;
@@ -289,7 +289,7 @@ void quad_renderer_destroy(Quad_Renderer *renderer) {
 }
 
 void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp,
-                        mat4x4 view_mat, Quad_Instance *instances, u32 instance_count) {
+                        mat4 view_mat, Quad_Instance *instances, u32 instance_count) {
   DEBUG_FUNCTION_BEGIN();
   
   DEBUG_SECTION_BEGIN(_buffer_data);
@@ -305,7 +305,7 @@ void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp,
   
   
   gl.UseProgram(renderer->shader);
-  gl_set_uniform_mat4x4(gl, renderer->shader, "u_view", &view_mat, 1);
+  gl_set_uniform_mat4(gl, renderer->shader, "u_view", &view_mat, 1);
   
   DEBUG_SECTION_BEGIN(_draw_call);
   gl.BindVertexArray(renderer->vao);
@@ -325,7 +325,7 @@ void render_group_init(Arena *arena, State *state, Render_Group *group,
   group->item_count = 0;
   group->screen_size = screen_size;
   group->camera = camera;
-  group->state.matrix = mat4x4_identity();
+  group->state.matrix = mat4_identity();
   group->state.color = V4(1, 1, 1, 1);
   group->item_capacity = item_capacity;
   group->state_stack_count = 0;
@@ -334,13 +334,13 @@ void render_group_init(Arena *arena, State *state, Render_Group *group,
   DEBUG_FUNCTION_END();
 }
 
-mat4x4 camera_get_matrix(Camera *camera, v2 screen_size) {
+mat4 camera_get_matrix(Camera *camera, v2 screen_size) {
   Transform t = camera->t;
-  mat4x4 result = mat4x4_identity();
-  result = mat4x4_scale(result, V3(2, 2, 1));
-  result = mat4x4_scale(result, v3_invert(t.scale));
-  result = mat4x4_rotate(result, -t.angle);
-  result = mat4x4_translate(result, v3_mul_s(t.p, -1));
+  mat4 result = mat4_identity();
+  result = mat4_scale(result, V3(2, 2, 1));
+  result = mat4_scale(result, v3_invert(t.scale));
+  result = mat4_rotate(result, -t.angle);
+  result = mat4_translate(result, v3_mul(t.p, -1));
   
   return result;
 }
@@ -365,18 +365,18 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           
           // TODO(lvl5): remove duplicate code
           if (atlas && atlas != sprite.atlas) {
-            mat4x4 view_matrix = camera_get_matrix(group->camera, group->screen_size);
+            mat4 view_matrix = camera_get_matrix(group->camera, group->screen_size);
             quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
                                instances, instance_count);
             instance_count = 0;
           }
           
           
-          mat4x4 model_m = item->state.matrix;
+          mat4 model_m = item->state.matrix;
           rect2 tex_rect = sprite_get_rect(sprite);
           
           Quad_Instance inst = {0};
-          inst.model = mat4x4_transpose(model_m);
+          inst.model = mat4_transpose(model_m);
           inst.tex_offset = tex_rect.min;
           inst.tex_scale = rect2_get_size(tex_rect);
           inst.color = item->state.color;
@@ -395,7 +395,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
     }
     DEBUG_SECTION_END(_push_instances);
     
-    mat4x4 view_matrix = camera_get_matrix(group->camera, group->screen_size);
+    mat4 view_matrix = camera_get_matrix(group->camera, group->screen_size);
     quad_renderer_draw(renderer, &atlas->bmp, view_matrix, 
                        instances, instance_count);
   }

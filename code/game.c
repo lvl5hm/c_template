@@ -269,8 +269,8 @@ Animation_Frame animation_pack_get_frame(Animation_Pack pack, Animation_Instance
     Animation_Frame frame = animation_get_frame(&anim, position);
     f32 coeff = weight/total_weight;
     
-    result.t.p = v3_add(result.t.p, v3_mul_s(frame.t.p, coeff));
-    result.t.scale = v3_add(result.t.scale, v3_mul_s(frame.t.scale, coeff));
+    result.t.p = v3_add(result.t.p, v3_mul(frame.t.p, coeff));
+    result.t.scale = v3_add(result.t.scale, v3_mul(frame.t.scale, coeff));
     result.t.angle = result.t.angle + frame.t.angle*coeff;
   }
   
@@ -369,14 +369,14 @@ b32 collide_aabb_aabb(rect2 a, rect2 b) {
 }
 
 v2 v2_transform(v2 v, Transform t) {
-  mat4x4 matrix4 = transform_apply(mat4x4_identity(), t);
-  v2 result = mat4x4_mul_v4(matrix4, v2_to_v4(v, 1, 1)).xy;
+  mat4 matrix4 = transform_apply(mat4_identity(), t);
+  v2 result = mat4_mul_v4(matrix4, v2_to_v4(v, 1, 1)).xy;
   return result;
 }
 
 v2 v2_transform_inverse(v2 v, Transform t) {
-  mat4x4 matrix4 = transform_apply_inverse(mat4x4_identity(), t);
-  v2 result = mat4x4_mul_v4(matrix4, v2_to_v4(v, 1, 1)).xy;
+  mat4 matrix4 = transform_apply_inverse(mat4_identity(), t);
+  v2 result = mat4_mul_v4(matrix4, v2_to_v4(v, 1, 1)).xy;
   return result;
 }
 
@@ -388,10 +388,10 @@ Polygon aabb_transform(rect2 box, Transform t) {
   result.v[3] = V2(box.max.x, box.min.y);
   result.count = 4;
   
-  mat4x4 matrix4 = transform_apply(mat4x4_identity(), t);
+  mat4 matrix4 = transform_apply(mat4_identity(), t);
   
   for (i32 i = 0; i < result.count; i++) {
-    result.v[i] = mat4x4_mul_v4(matrix4, v2_to_v4(result.v[i], 1, 1)).xy;
+    result.v[i] = mat4_mul_v4(matrix4, v2_to_v4(result.v[i], 1, 1)).xy;
   }
   
   return result;
@@ -412,7 +412,7 @@ v2 gjk_polygon_max_vertex_in_direction(Polygon a, v2 direction) {
 }
 
 v2 gjk_circle_get_max_vertex_in_direction(Circle_Collider e, Transform t, v2 direction_unit) {
-  v2 scale = v2_mul_s(t.scale.xy, e.r);
+  v2 scale = v2_mul(t.scale.xy, e.r);
   
   v2 normal = v2_perp(v2_negate(direction_unit));
   normal = v2_rotate(normal, -t.angle);
@@ -470,7 +470,7 @@ b32 gjk_collide(Collider a_coll, Transform a_t,
   i32 simplex_count = 1;
   v2 start_p = gjk_support(v2_right(), a_coll, a_t, b_coll, b_t);
   simplex[0] = start_p;
-  v2 dir = v2_mul_s(start_p, -1);
+  v2 dir = v2_mul(start_p, -1);
   b32 result = true;
   while (true) {
     v2 p = gjk_support(dir, a_coll, a_t, b_coll, b_t);;
@@ -598,7 +598,7 @@ b32 skill_use(State *state, Entity *e, Skill *skill) {
         
         v2 dir = v2_sub(e->target_p, e->t.p.xy);
         ball->t.angle = atan2_f32(dir.y, dir.x);
-        ball->d_p = v2_to_v3(v2_mul_s(v2_unit(dir), 5.0f), 0);
+        ball->d_p = v2_to_v3(v2_mul(v2_unit(dir), 5.0f), 0);
         ball->contact_damage = damage;
       } break;
     }
@@ -705,7 +705,7 @@ extern GAME_UPDATE(game_update) {
   }
 #endif
   
-  state->camera.t.scale = v2_to_v3(v2_div_s(screen_size, PIXELS_PER_METER), 1);
+  state->camera.t.scale = v2_to_v3(v2_div(screen_size, PIXELS_PER_METER), 1);
   
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group _group;
@@ -727,20 +727,20 @@ extern GAME_UPDATE(game_update) {
     Entity *e = get_entity(state, entity_index);
     if (!e) continue;
     
-    e->t.p = v3_add(e->t.p, v3_mul_s(e->d_p, dt));
+    e->t.p = v3_add(e->t.p, v3_mul(e->d_p, dt));
     
     if (e->player_controller) {
       v2 move_dir = v2_i(input->move_right.is_down - input->move_left.is_down,
                          input->move_up.is_down - input->move_down.is_down);
       f32 move_dir_len = v2_length(move_dir);
       if (move_dir_len) {
-        move_dir = v2_div_s(move_dir, move_dir_len);
+        move_dir = v2_div(move_dir, move_dir_len);
       }
       
-      v2 d_d_p = v2_mul_s(move_dir, 1.0f);
+      v2 d_d_p = v2_mul(move_dir, 1.0f);
       e->d_p = v3_add(e->d_p, v2_to_v3(d_d_p, 0));
       e->target_p = mouse_world;
-      e->d_p = v3_mul_s(e->d_p, e->friction);
+      e->d_p = v3_mul(e->d_p, e->friction);
       
       for (i32 skill_index = 0; 
            skill_index < array_count(e->skills);

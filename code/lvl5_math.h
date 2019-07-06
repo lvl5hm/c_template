@@ -1,8 +1,7 @@
 #ifndef LVL5_MATH
 
 #include "lvl5_types.h"
-#include "lvl5_intrinsics.h"
-#include "math.h"
+#include <math.h>
 
 
 #define PI 3.14159265359f
@@ -37,7 +36,7 @@ i32 min_i32(i32 a, i32 min) {
 
 
 
-i32 clip_i32(i32 a, i32 min, i32 max) {
+i32 clamp_i32(i32 a, i32 min, i32 max) {
   i32 result = max_i32(min_i32(a, max), min);
   return result;
 }
@@ -158,14 +157,14 @@ v2 v2_hadamard(v2 a, v2 b) {
   return result;
 }
 
-v2 v2_mul_s(v2 a, f32 s) {
+v2 v2_mul(v2 a, f32 s) {
   v2 result;
   result.x = a.x*s;
   result.y = a.y*s;
   return result;
 }
 
-v2 v2_div_s(v2 a, f32 s) {
+v2 v2_div(v2 a, f32 s) {
   v2 result;
   result.x = a.x/s;
   result.y = a.y/s;
@@ -195,7 +194,7 @@ f32 v2_length(v2 a) {
 }
 
 v2 v2_unit(v2 a) {
-  v2 result = v2_div_s(a, v2_length(a));
+  v2 result = v2_div(a, v2_length(a));
   return result;
 }
 
@@ -209,7 +208,7 @@ f32 v2_project_s(v2 a, v2 b) {
 v2 v2_project(v2 a, v2 b) {
   f32 len_sqr = v2_length_sqr(b);
   assert(len_sqr);
-  v2 result = v2_mul_s(b, v2_dot(a, b)/len_sqr);
+  v2 result = v2_mul(b, v2_dot(a, b)/len_sqr);
   return result;
 }
 
@@ -222,7 +221,7 @@ v2 v2_rotate(v2 a, f32 angle) {
 
 
 v2 v2_negate(v2 a) {
-  v2 result = v2_mul_s(a, -1);
+  v2 result = v2_mul(a, -1);
   return result;
 }
 
@@ -271,6 +270,7 @@ typedef union {
   };
 } v3;
 
+
 v3 V3(f32 x, f32 y, f32 z) {
   v3 result;
   result.x = x;
@@ -316,7 +316,7 @@ v3 v3_hadamard(v3 a, v3 b) {
   return result;
 }
 
-v3 v3_mul_s(v3 a, f32 s) {
+v3 v3_mul(v3 a, f32 s) {
   v3 result;
   result.x = a.x*s;
   result.y = a.y*s;
@@ -324,7 +324,7 @@ v3 v3_mul_s(v3 a, f32 s) {
   return result;
 }
 
-v3 v3_div_s(v3 a, f32 s) {
+v3 v3_div(v3 a, f32 s) {
   v3 result;
   result.x = a.x/s;
   result.y = a.y/s;
@@ -348,6 +348,32 @@ v3 v3_negate(v3 a) {
   result.z = -a.z;
   return result;
 }
+
+f32 v3_length_sqr(v3 a) {
+  f32 result = sqr_f32(a.x) + sqr_f32(a.y) + sqr_f32(a.z);
+  return result;
+}
+
+f32 v3_length(v3 a) {
+  f32 result = sqrt_f32(v3_length_sqr(a));
+  return result;
+}
+
+v3 v3_unit(v3 a) {
+  f32 length = v3_length(a);
+  assert(length);
+  v3 result = v3_div(a, length);
+  return result;
+}
+
+v3 v3_cross(v3 a, v3 b) {
+  v3 result;
+  result.x = a.y*b.z - a.z*b.y;
+  result.y = a.z*b.x - a.x*b.z;
+  result.z = a.x*b.y - a.y*b.x;
+  return result;
+}
+
 
 v3 v3_zero() {return V3(0, 0, 0);}
 v3 v3_right() {return V3(1, 0, 0);}
@@ -381,6 +407,10 @@ typedef union {
   };
   struct {
     v3 rgb;
+  };
+  struct {
+    f32 inner;
+    v3 outer;
   };
 } v4;
 
@@ -420,7 +450,7 @@ v4 v4_hadamard(v4 a, v4 b) {
   return result;
 }
 
-v4 v4_mul_s(v4 a, f32 s) {
+v4 v4_mul(v4 a, f32 s) {
   v4 result;
   result.x = a.x*s;
   result.y = a.y*s;
@@ -429,7 +459,17 @@ v4 v4_mul_s(v4 a, f32 s) {
   return result;
 }
 
-v4 v4_div_s(v4 a, f32 s) {
+f32 v4_dot(v4 a, v4 b) {
+  f32 result = a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w;
+  return result;
+}
+
+v4 v4_negate(v4 a) {
+  v4 result = v4_mul(a, -1);
+  return result;
+}
+
+v4 v4_div(v4 a, f32 s) {
   v4 result;
   result.x = a.x/s;
   result.y = a.y/s;
@@ -488,14 +528,14 @@ v2i v2i_sub(v2i a, v2i b) {
   return result;
 }
 
-v2i v2i_mul_s(v2i a, i32 s) {
+v2i v2i_mul(v2i a, i32 s) {
   v2i result;
   result.x = a.x*s;
   result.y = a.y*s;
   return result;
 }
 
-v2i v2i_div_s(v2i a, i32 s) {
+v2i v2i_div(v2i a, i32 s) {
   v2i result;
   result.x = a.x/s;
   result.y = a.y/s;
@@ -503,7 +543,7 @@ v2i v2i_div_s(v2i a, i32 s) {
 }
 
 
-// mat2x2
+// mat2
 
 typedef union {
   f32 e[4];
@@ -511,11 +551,11 @@ typedef union {
     f32 e00; f32 e10;
     f32 e01; f32 e11;
   };
-} mat2x2;
+} mat2;
 
-mat2x2 Mat2x2(f32 e00, f32 e10,
-              f32 e01, f32 e11) {
-  mat2x2 result;
+mat2 Mat2(f32 e00, f32 e10,
+          f32 e01, f32 e11) {
+  mat2 result;
   result.e00 = e00;
   result.e10 = e10;
   result.e01 = e01;
@@ -523,8 +563,8 @@ mat2x2 Mat2x2(f32 e00, f32 e10,
   return result;
 }
 
-mat2x2 mat2x2_mul_mat2x2(mat2x2 a, mat2x2 b) {
-  mat2x2 result;
+mat2 mat2_mul_mat2(mat2 a, mat2 b) {
+  mat2 result;
   result.e00 = a.e00*b.e00 + a.e10*b.e01;
   result.e10 = a.e00*b.e10 + a.e10*b.e11;
   result.e01 = a.e01*b.e00 + a.e11*b.e01;
@@ -532,14 +572,14 @@ mat2x2 mat2x2_mul_mat2x2(mat2x2 a, mat2x2 b) {
   return result;
 }
 
-v2 mat2x2_mul_v2(mat2x2 m, v2 v) {
+v2 mat2_mul_v2(mat2 m, v2 v) {
   v2 result;
   result.x = v.x*m.e00 + v.x*m.e10;
   result.y = v.y*m.e01 + v.y*m.e11;
   return result;
 }
 
-// mat3x3
+// mat3
 typedef union {
   f32 e[9];
   struct {
@@ -547,12 +587,12 @@ typedef union {
     f32 e01; f32 e11; f32 e21;
     f32 e02; f32 e12; f32 e22;
   };
-} mat3x3;
+} mat3;
 
-mat3x3 Mat3x3(f32 e00, f32 e10, f32 e20,
-              f32 e01, f32 e11, f32 e21,
-              f32 e02, f32 e12, f32 e22) {
-  mat3x3 result;
+mat3 Mat3(f32 e00, f32 e10, f32 e20,
+          f32 e01, f32 e11, f32 e21,
+          f32 e02, f32 e12, f32 e22) {
+  mat3 result;
   result.e00 = e00;
   result.e10 = e10;
   result.e20 = e20;
@@ -565,8 +605,8 @@ mat3x3 Mat3x3(f32 e00, f32 e10, f32 e20,
   return result;
 }
 
-mat3x3 mat3x3_mul_mat3x3(mat3x3 a, mat3x3 b) {
-  mat3x3 result;
+mat3 mat3_mul_mat3(mat3 a, mat3 b) {
+  mat3 result;
   result.e00 = a.e00*b.e00 + a.e10*b.e01 + a.e20*b.e02;
   result.e10 = a.e00*b.e10 + a.e10*b.e11 + a.e20*b.e12;
   result.e20 = a.e00*b.e20 + a.e10*b.e21 + a.e20*b.e22;
@@ -582,7 +622,7 @@ mat3x3 mat3x3_mul_mat3x3(mat3x3 a, mat3x3 b) {
 }
 
 
-// mat4x4
+// mat4
 typedef union {
   f32 e[16];
   struct {
@@ -591,13 +631,13 @@ typedef union {
     f32 e02; f32 e12; f32 e22; f32 e32;
     f32 e03; f32 e13; f32 e23; f32 e33;
   };
-} mat4x4;
+} mat4;
 
-mat4x4 Mat4x4(f32 e00, f32 e10, f32 e20, f32 e30,
-              f32 e01, f32 e11, f32 e21, f32 e31,
-              f32 e02, f32 e12, f32 e22, f32 e32,
-              f32 e03, f32 e13, f32 e23, f32 e33) {
-  mat4x4 result;
+mat4 Mat4(f32 e00, f32 e10, f32 e20, f32 e30,
+          f32 e01, f32 e11, f32 e21, f32 e31,
+          f32 e02, f32 e12, f32 e22, f32 e32,
+          f32 e03, f32 e13, f32 e23, f32 e33) {
+  mat4 result;
   result.e00 = e00;
   result.e10 = e10;
   result.e20 = e20;
@@ -621,8 +661,8 @@ mat4x4 Mat4x4(f32 e00, f32 e10, f32 e20, f32 e30,
   return result;
 }
 
-mat2x2 mat4x4_to_mat2x2(mat4x4 m) {
-  mat2x2 result;
+mat2 mat4_to_mat2(mat4 m) {
+  mat2 result;
   result.e00 = m.e00;
   result.e01 = m.e01;
   result.e10 = m.e10;
@@ -630,7 +670,7 @@ mat2x2 mat4x4_to_mat2x2(mat4x4 m) {
   return result;
 }
 
-v4 mat4x4_mul_v4(mat4x4 m, v4 v) {
+v4 mat4_mul_v4(mat4 m, v4 v) {
   v4 result;
   result.x = v.x*m.e00 + v.y*m.e10 + v.z*m.e20 + v.w*m.e30;
   result.y = v.x*m.e01 + v.y*m.e11 + v.z*m.e21 + v.w*m.e31;
@@ -641,8 +681,31 @@ v4 mat4x4_mul_v4(mat4x4 m, v4 v) {
 
 
 // TODO(lvl5): simd this shit?
-inline mat4x4 mat4x4_mul_mat4x4(mat4x4 a, mat4x4 b) {
-  mat4x4 result;
+inline mat4 mat4_mul_mat4(mat4 a, mat4 b) {
+  mat4 result;
+  
+#if 1
+  result.e00 = a.e00*b.e00 + a.e10*b.e01 + a.e20*b.e02 + a.e30*b.e03;
+  result.e10 = a.e00*b.e10 + a.e10*b.e11 + a.e20*b.e12 + a.e30*b.e13;
+  result.e20 = a.e00*b.e20 + a.e10*b.e21 + a.e20*b.e22 + a.e30*b.e23;
+  result.e30 = a.e00*b.e30 + a.e10*b.e31 + a.e20*b.e32 + a.e30*b.e33;
+  
+  result.e01 = a.e01*b.e00 + a.e11*b.e01 + a.e21*b.e02 + a.e31*b.e03;
+  result.e11 = a.e01*b.e10 + a.e11*b.e11 + a.e21*b.e12 + a.e31*b.e13;
+  result.e21 = a.e01*b.e20 + a.e11*b.e21 + a.e21*b.e22 + a.e31*b.e23;
+  result.e31 = a.e01*b.e30 + a.e11*b.e31 + a.e21*b.e32 + a.e31*b.e33;
+  
+  result.e02 = a.e02*b.e00 + a.e12*b.e01 + a.e22*b.e02 + a.e32*b.e03;
+  result.e12 = a.e02*b.e10 + a.e12*b.e11 + a.e22*b.e12 + a.e32*b.e13;
+  result.e22 = a.e02*b.e20 + a.e12*b.e21 + a.e22*b.e22 + a.e32*b.e23;
+  result.e32 = a.e02*b.e30 + a.e12*b.e31 + a.e22*b.e32 + a.e32*b.e33;
+  
+  result.e03 = a.e03*b.e00 + a.e13*b.e01 + a.e23*b.e02 + a.e33*b.e03;
+  result.e13 = a.e03*b.e10 + a.e13*b.e11 + a.e23*b.e12 + a.e33*b.e13;
+  result.e23 = a.e03*b.e20 + a.e13*b.e21 + a.e23*b.e22 + a.e33*b.e23;
+  result.e33 = a.e03*b.e30 + a.e13*b.e31 + a.e23*b.e32 + a.e33*b.e33;
+  
+#else
   
   __m128 a00 = _mm_set_ps1(a.e00);
   __m128 a01 = _mm_set_ps1(a.e01);
@@ -704,50 +767,91 @@ inline mat4x4 mat4x4_mul_mat4x4(mat4x4 a, mat4x4 b) {
   res[1] = res_row_1;
   res[2] = res_row_2;
   res[3] = res_row_3;
+#endif
   
   return result;
 }
 
-mat4x4 mat4x4_identity() {
-  mat4x4 result = Mat4x4(1, 0, 0, 0,
-                         0, 1, 0, 0,
-                         0, 0, 1, 0,
-                         0, 0, 0, 1);
+mat4 mat4_identity() {
+  mat4 result = Mat4(1, 0, 0, 0,
+                     0, 1, 0, 0,
+                     0, 0, 1, 0,
+                     0, 0, 0, 1);
   return result;
 }
 
-mat4x4 mat4x4_scale(mat4x4 m, v3 scale) {
-  mat4x4 scale_m = Mat4x4(scale.x, 0,         0,         0,
-                          0,       scale.y,   0,         0,
-                          0,       0,         scale.z,   0,
-                          0,       0,         0,         1.0f);
+v4 v3_to_v4(v3 a, f32 w) {
+  v4 result;
+  result.xyz = a;
+  result.w = w;
+  return result;
+}
+
+v3 v3_outer(v3 a, v3 b) {
+  v3 result;
+  result.x = a.x*b.y - b.x*a.y;
+  result.y = a.x*b.z - b.x*a.z;
+  result.z = a.y*b.z - b.y*a.z;
+  return result;
+}
+
+
+v4 v3_geometric(v3 a, v3 b) {
+  v4 result;
+  result.inner = v3_dot(a, b);
+  result.outer = v3_outer(a, b);
   
-  mat4x4 result = mat4x4_mul_mat4x4(m, scale_m);
   return result;
 }
 
-mat4x4 mat4x4_rotate(mat4x4 m, f32 angle) {
+#if 0
+v4 rotor3(v3 axis, f32 angle) {
+  
+}
+
+v3 v3_rotate(v3 a, v4 rotor) {
+  v4 neg_rotor;
+  neg_rotor.inner = rotor.inner;
+  neg_rotor.outer = v3_negate(rotor.outer);
+  
+  v4 res = v3_geometric(neg_rotor, v3_geometric(a, rotor));
+  return res.xyz;
+}
+#endif
+
+
+mat4 mat4_scale(mat4 m, v3 scale) {
+  mat4 scale_m = Mat4(scale.x, 0,         0,         0,
+                      0,       scale.y,   0,         0,
+                      0,       0,         scale.z,   0,
+                      0,       0,         0,         1.0f);
+  
+  mat4 result = mat4_mul_mat4(m, scale_m);
+  return result;
+}
+
+mat4 mat4_rotate(mat4 m, f32 angle) {
   f32 cos = cos_f32(-angle);
   f32 sin = sin_f32(-angle);
-  mat4x4 rotate_m = Mat4x4(cos,  sin,  0,    0,
-                           -sin, cos,  0,    0,
-                           0,    0,    1.0f, 0,
-                           0,    0,    0,    1.0f);
-  mat4x4 result = mat4x4_mul_mat4x4(m, rotate_m);
+  mat4 rotate_m = Mat4(cos,  sin,  0,    0,
+                       -sin, cos,  0,    0,
+                       0,    0,    1.0f, 0,
+                       0,    0,    0,    1.0f);
+  mat4 result = mat4_mul_mat4(m, rotate_m);
   return result;
 }
 
-mat4x4 mat4x4_translate(mat4x4 m, v3 p) {
-  mat4x4 translate_m = Mat4x4(1.0f, 0,    0,    p.x,
-                              0,    1.0f, 0,    p.y,
-                              0,    0,    1.0f, p.z,
-                              0,    0,    0,    1.0f);
-  mat4x4 result = mat4x4_mul_mat4x4(m, translate_m);
+mat4 mat4_translate(mat4 m, v3 p) {
+  mat4 translate_m = Mat4(1.0f, 0,    0,    p.x,
+                          0,    1.0f, 0,    p.y,
+                          0,    0,    1.0f, p.z,
+                          0,    0,    0,    1.0f);
+  mat4 result = mat4_mul_mat4(m, translate_m);
   return result;
 }
 
-mat4x4 mat4x4_transpose(mat4x4 m) {
-  mat4x4 result;
+mat4 mat4_transpose(mat4 m) {
+  mat4 result;
   for (i32 y = 0; y < 4; y++) {
     for (i32 x = 0; x < 4; x++) {
       result.e[y*4 + x] = m.e[x*4 + y];
@@ -780,7 +884,7 @@ rect2 rect2_min_size(v2 min, v2 size) {
 
 rect2 rect2_center_size(v2 center, v2 size) {
   rect2 result;
-  v2 half_size = v2_mul_s(size, 0.5f);
+  v2 half_size = v2_mul(size, 0.5f);
   result.min = v2_sub(center, half_size);
   result.max = v2_add(center, half_size);
   return result;
@@ -792,7 +896,7 @@ v2 rect2_get_size(rect2 r) {
 }
 
 v2 rect2_get_center(rect2 r) {
-  v2 result = v2_add(r.min, v2_mul_s(rect2_get_size(r), 0.5f));
+  v2 result = v2_add(r.min, v2_mul(rect2_get_size(r), 0.5f));
   return result;
 }
 
@@ -803,10 +907,10 @@ rect2 rect2_translate(rect2 r, v2 v) {
   return result;
 }
 
-rect2 rect2_apply_matrix(rect2 r, mat4x4 m) {
+rect2 rect2_apply_matrix(rect2 r, mat4 m) {
   rect2 result;
-  result.min = mat4x4_mul_v4(m, v2_to_v4(r.min, 1, 1)).xy;
-  result.max = mat4x4_mul_v4(m, v2_to_v4(r.max, 1, 1)).xy;
+  result.min = mat4_mul_v4(m, v2_to_v4(r.min, 1, 1)).xy;
+  result.max = mat4_mul_v4(m, v2_to_v4(r.max, 1, 1)).xy;
   return result;
 }
 
@@ -833,7 +937,7 @@ rect2i rect2i_min_size(v2i min, v2i size) {
 
 rect2i rect2i_center_size(v2i center, v2i size) {
   rect2i result;
-  v2i half_size = v2i_div_s(size, 2);
+  v2i half_size = v2i_div(size, 2);
   result.min = v2i_sub(center, half_size);
   result.max = v2i_add(center, half_size);
   return result;

@@ -1,29 +1,13 @@
 #ifndef LVL5_STRING
 #define LVL5_STRING_VERSION 0
 
-#include "lvl5_math.h"
 #include "lvl5_types.h"
-#include "lvl5_alloc.h"
-#include "stdarg.h"
+#include "lvl5_arena.h"
 
 typedef struct {
   char *data;
   u32 count;
 } String;
-
-typedef struct Builder_Buffer Builder_Buffer;
-
-struct Builder_Buffer {
-  char *data;
-  u32 count;
-  u32 capacity;
-  Builder_Buffer *next;
-};
-
-typedef struct {
-  Builder_Buffer *first;
-  Builder_Buffer *last;
-} String_Builder;
 
 #define const_string(const_char) make_string(const_char, array_count(const_char)-1)
 
@@ -147,6 +131,11 @@ b32 string_compare(String a, String b) {
   }
   return true;
 }
+
+
+#include "lvl5_math.h"
+#include "stdarg.h"
+
 
 i32 string_to_i32(String str) {
   i32 result = 0;

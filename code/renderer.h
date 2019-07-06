@@ -11,7 +11,7 @@ typedef struct {
 } Quad_Vertex;
 
 typedef struct {
-  mat4x4 model;
+  mat4 model;
   v2 tex_offset;
   v2 tex_scale;
   v4 color;
@@ -55,7 +55,7 @@ typedef struct {
 } Render_Sprite;
 
 typedef struct {
-  mat4x4 matrix;
+  mat4 matrix;
   v4 color;
   Font *font;
 } Render_State;

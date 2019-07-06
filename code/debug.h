@@ -1,5 +1,6 @@
 #ifndef DEBUG_H
 
+#include "lvl5_intrinsics.h"
 #include "lvl5_string.h"
 
 typedef enum {
