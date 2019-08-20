@@ -1,6 +1,6 @@
 #include "renderer.h"
 #include "debug.h"
-#define PIXELS_PER_METER 96
+#define PIXELS_PER_METER 32
 #include "font.c"
 
 mat4 transform_apply(mat4 matrix, Transform t) {

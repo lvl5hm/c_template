@@ -137,10 +137,30 @@ typedef struct {
   Lifetime lifetime;
 } Entity;
 
+typedef enum {
+  Terrain_Kind_NONE,
+  Terrain_Kind_GRASS,
+  Terrain_Kind_WALL,
+} Terrain_Kind;
+
+
+#define CHUNK_SIZE 8
+
+typedef struct {
+  Terrain_Kind tiles[CHUNK_SIZE*CHUNK_SIZE];
+  i32 x;
+  i32 y;
+} Tile_Chunk;
+
+typedef struct {
+  Tile_Chunk *chunks;
+} Tile_Map;
 
 #define MAX_ENTITY_COUNT 10000
 
 typedef struct {
+  Tile_Map tile_map;
+  
   Input empty_input;
   Sound test_sound;
   Sound snd_bop;
@@ -167,6 +187,9 @@ typedef struct {
   Sprite spr_robot_torso;
   Sprite spr_robot_leg;
   Sprite spr_robot_eye;
+  Sprite spr_wall;
+  Sprite spr_grass;
+  
   Animation_Pack robot_parts[Robot_Part_COUNT];
   Animation_Instance robot_anim;
   

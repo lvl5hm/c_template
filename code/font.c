@@ -254,7 +254,6 @@ Sprite font_get_sprite(Font *font, char ch) {
   return spr;
 }
 
-
 // NOTE(lvl5): width is in pixels
 f32 font_get_text_width(Font *font, String text) {
   f32 result = 0;

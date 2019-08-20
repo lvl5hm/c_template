@@ -231,7 +231,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
         u64 end_cycles = frame->events[frame->event_count-1].cycles;
         u64 duration = end_cycles - begin_cycles;
         
-        f32 rect_height = (f32)duration/MAX_CYCLES*3;
+        f32 rect_height = (f32)duration/MAX_CYCLES;
         
         rect2 rect = rect2_min_size(V2(0, 0), 
                                     V2(rect_width, rect_height));

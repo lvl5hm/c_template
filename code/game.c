@@ -188,14 +188,10 @@ Entity *add_entity_box(State *state) {
 Entity *add_entity_enemy(State *state) {
   Entity *e = add_entity(state);
   e->t.scale.xy = V2(3.0f, 0.5f);
-#if 0
-  e->box_collider.rect = rect2_center_size(V2(0, 0), V2(1, 1));
-  e->box_collider.active = true;
-#else
+  
   e->collider.circle.r = 0.5f;
   e->collider.circle.origin = V2(0, 0);
   e->collider.type = Collider_Type_CIRCLE;
-#endif
   
   return e;
 }
@@ -618,7 +614,7 @@ extern GAME_UPDATE(game_update) {
     gl = _platform.gl;
     scratch = &state->scratch;
     
-#define SCRATCH_SIZE kilobytes(32)
+#define SCRATCH_SIZE megabytes(10)
     arena_init(&state->scratch, memory.temp, SCRATCH_SIZE);
     arena_init(&state->temp, memory.temp + SCRATCH_SIZE, 
                memory.temp_size - SCRATCH_SIZE);
@@ -631,9 +627,8 @@ extern GAME_UPDATE(game_update) {
     
     // NOTE(lvl5): when live reloading, the sound files can be overwritten
     // with garbage since it's located in temp arena right now
-    state->test_sound = load_wav(&state->temp, 
-                                 const_string("sounds/durarara.wav"));
-    sound_play(&state->sound_state, &state->test_sound, Sound_Type_MUSIC);
+    //state->test_sound = load_wav(&state->temp, const_string("sounds/durarara.wav"));
+    //sound_play(&state->sound_state, &state->test_sound, Sound_Type_MUSIC);
     state->snd_bop = load_wav(&state->temp, const_string("sounds/bop.wav"));
     
     debug_add_arena(&state->arena, const_string("main"));
@@ -674,6 +669,10 @@ extern GAME_UPDATE(game_update) {
     state->spr_robot_leg = make_sprite(&state->atlas, 1, V2(0, 1));
     state->spr_robot_torso = make_sprite(&state->atlas, 2, V2(0.5f, 0.5f));
     
+    state->spr_grass = make_sprite(&state->atlas, 0, V2(0.5f, 0.5f));
+    state->spr_wall = make_sprite(&state->atlas, 4, V2(0.5f, 0.5f));
+    
+    
     gl.Enable(GL_BLEND);
     gl.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
@@ -682,6 +681,53 @@ extern GAME_UPDATE(game_update) {
     add_entity_player(state);
     
     
+    char *ascii_chunks[] = {
+      "########"
+        "#_____##"
+        "#_______"
+        "##______"
+        "##______"
+        "####____"
+        "########" 
+        "########",
+      
+      "______##"
+        "______##"
+        "_______#"
+        "#______#"
+        "_______#"
+        "__#_____"
+        "__##____"
+        "________",
+    };
+    
+#define TILE_SIZE_IN_METERS 1
+    
+    state->tile_map.chunks = sb_init(&state->arena, Tile_Chunk, 64, true);
+    
+    for (i32 chunk_y = -3; chunk_y < 3; chunk_y++) {
+      for (i32 chunk_x = -3; chunk_x < 3; chunk_x++) {
+        i32 random_index = random_range_i32(&state->rand, 0, array_count(ascii_chunks) - 1);
+        char *ascii_chunk = ascii_chunks[random_index];
+        
+        Tile_Chunk chunk;
+        chunk.x = chunk_x;
+        chunk.y = chunk_y;
+        
+        for (i32 tile_y = 0; tile_y < CHUNK_SIZE; tile_y++) {
+          for (i32 tile_x = 0; tile_x < CHUNK_SIZE; tile_x++) {
+            char ch = ascii_chunk[tile_y*CHUNK_SIZE + tile_x];
+            if (ch == '#') {
+              chunk.tiles[tile_y*CHUNK_SIZE + tile_x] = Terrain_Kind_WALL;
+            } else if (ch == '_') {
+              chunk.tiles[tile_y*CHUNK_SIZE + tile_x] = Terrain_Kind_GRASS;
+            }
+          }
+        }
+        
+        sb_push(state->tile_map.chunks, chunk);
+      }
+    }
     
 #include "robot_animation.h"
     
@@ -748,6 +794,32 @@ extern GAME_UPDATE(game_update) {
 #endif
   
   
+  for (u32 chunk_index = 0; chunk_index < sb_count(state->tile_map.chunks); chunk_index++) {
+    Tile_Chunk *chunk = state->tile_map.chunks + chunk_index;
+    for (i32 tile_y = 0; tile_y < CHUNK_SIZE; tile_y++) {
+      for (i32 tile_x = 0; tile_x < CHUNK_SIZE; tile_x++) {
+        Sprite spr = {0};
+        Terrain_Kind terrain = chunk->tiles[tile_y*CHUNK_SIZE + tile_x];
+        switch (terrain) {
+          case Terrain_Kind_GRASS: {
+            spr = state->spr_grass;
+          } break;
+          
+          case Terrain_Kind_WALL: {
+            spr = state->spr_wall;
+          } break;
+          
+          default: assert(false);
+        }
+        
+        v2 world_p = V2((f32)(chunk->x*CHUNK_SIZE + tile_x)*TILE_SIZE_IN_METERS,
+                        (f32)(chunk->y*CHUNK_SIZE + tile_y)*TILE_SIZE_IN_METERS);
+        Transform t = transform_default();
+        t.p = v2_to_v3(world_p, 0);
+        push_sprite(group, spr, t);
+      }
+    }
+  }
   
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
     Entity *e = get_entity(state, entity_index);
@@ -813,9 +885,6 @@ extern GAME_UPDATE(game_update) {
     
     render_translate(group, V3(0, -0.2f, 0));
     push_text(group, mp_string);
-    
-    String lipsum = const_string("There are many variations of passages of Lorem Ipsum available, but the majority have suffered alteration in some form, by injected humour, or randomised words which don't look even slightly believable. If you are going to use a passage of Lorem Ipsum, you need to be sure there isn't anything embarrassing hidden in the middle of text. All the Lorem Ipsum generators on the Internet tend to repeat predefined chunks as necessary, making this the first true generator on the Internet. It uses a dictionary of over 200 Latin words, combined with a handful of model sentence structures, to generate Lorem Ipsum which looks reasonable. The generated Lorem Ipsum is therefore always free from repetition, injected humour, or non-characteristic words etc.");
-    push_text(group, lipsum);
     
     render_restore(group);
     
