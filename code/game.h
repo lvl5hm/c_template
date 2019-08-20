@@ -143,11 +143,15 @@ typedef enum {
   Terrain_Kind_WALL,
 } Terrain_Kind;
 
+typedef struct {
+  Terrain_Kind terrain;
+} Tile;
 
 #define CHUNK_SIZE 8
+#define TILE_SIZE_IN_METERS 1
 
 typedef struct {
-  Terrain_Kind tiles[CHUNK_SIZE*CHUNK_SIZE];
+  Tile tiles[CHUNK_SIZE*CHUNK_SIZE];
   i32 x;
   i32 y;
 } Tile_Chunk;
@@ -155,6 +159,13 @@ typedef struct {
 typedef struct {
   Tile_Chunk *chunks;
 } Tile_Map;
+
+typedef struct {
+  i32 chunk_x;
+  i32 chunk_y;
+  i32 tile_x;
+  i32 tile_y;
+} Tile_Position;
 
 #define MAX_ENTITY_COUNT 10000
 

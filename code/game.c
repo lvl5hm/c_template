@@ -20,6 +20,9 @@ there probably is some memory corruption bug that sometimes sets
 audio_state.sound_count to 64
 
 ---- ENGINE ----
+[ ] add separate render group for UI
+[ ] linebreak size should not depend on PIXELS_PER_METER
+
 
 [ ] multithreading
  -[x] thread queues in the windows layer
@@ -79,13 +82,13 @@ audio_state.sound_count to 64
  -[x] SSE?
  
  ---- GAME ----
- [ ] camera
- [ ] basic player movement
- [ ] player active abilities
+ [x] camera
+ [x] basic player movement
+ [x] player active abilities
  [ ] ability rune examples
  [ ] basic enemy AI and abilities
  [ ] some basic GUI
- -[ ] hp/mana
+ -[x] hp/mana
  -[ ] gold/exp?
  -[ ] abilities and cooldowns
  -[ ] inventory and using runes
@@ -101,7 +104,6 @@ audio_state.sound_count to 64
  -[ ] removed 2D physics stuff for now. If I decide to go full physics,
  I would probably need to do GJK/EPA/find contact manifold using some method
  and I need to learn A LOT about rigidbody simulation if I want proper physics
- Implementing just GJK for general collision would be super nice though
  
  -[ ] tilemap collision
  -[ ] collision rules?
@@ -165,6 +167,7 @@ Entity *add_entity_player(State *state) {
   e->collider.type = Collider_Type_BOX;
   e->player_controller = true;
   e->friction = 0.92f;
+  e->t.p.x = 3;
   
   e->skills[0] = (Skill){
     .type = Skill_Type_FIREBALL,
@@ -603,6 +606,50 @@ b32 skill_use(State *state, Entity *e, Skill *skill) {
   return result;
 }
 
+rect2 get_bbox(Entity *e) {
+  assert(e->collider.type == Collider_Type_BOX);
+  Polygon poly = aabb_transform(e->collider.box.rect, e->t);
+  
+  rect2 result = rect2_inverted_infinity();
+  for (i32 i = 0; i < poly.count; i++) {
+    v2 corner = poly.v[i];
+    if (corner.x < result.min.x) result.min.x = corner.x;
+    if (corner.x > result.max.x) result.max.x = corner.x;
+    if (corner.y < result.min.y) result.min.y = corner.y;
+    if (corner.y > result.max.y) result.max.y = corner.y;
+  }
+  return result;
+}
+
+Tile_Position get_tile_position(v2 p) {
+  p.x += 0.5f;
+  p.y += 0.5f;
+  Tile_Position result = {0};
+  i32 round_x = floor_f32_i32(p.x/TILE_SIZE_IN_METERS);
+  i32 round_y = floor_f32_i32(p.y/TILE_SIZE_IN_METERS);
+  result.chunk_x = floor_f32_i32(p.x/CHUNK_SIZE*TILE_SIZE_IN_METERS);
+  result.chunk_y = floor_f32_i32(p.y/CHUNK_SIZE*TILE_SIZE_IN_METERS);
+  result.tile_x = round_x - result.chunk_x*CHUNK_SIZE;
+  result.tile_y = round_y - result.chunk_y*CHUNK_SIZE;
+  
+  return result;
+}
+
+Tile *get_tile(Tile_Map *map, Tile_Position p) {
+  // TODO(lvl5): hashtable
+  Tile_Chunk *chunk = 0;
+  for (u32 i = 0; i < sb_count(map->chunks); i++) {
+    Tile_Chunk *test = map->chunks + i;
+    if (test->x == p.chunk_x && test->y == p.chunk_y) {
+      chunk = test;
+      break;
+    }
+  }
+  assert(chunk);
+  Tile *result = chunk->tiles + p.tile_y*CHUNK_SIZE + p.tile_x;
+  return result;
+}
+
 extern GAME_UPDATE(game_update) {
   State *state = (State *)memory.perm;
   debug_state = (Debug_State *)memory.debug;
@@ -701,8 +748,6 @@ extern GAME_UPDATE(game_update) {
         "________",
     };
     
-#define TILE_SIZE_IN_METERS 1
-    
     state->tile_map.chunks = sb_init(&state->arena, Tile_Chunk, 64, true);
     
     for (i32 chunk_y = -3; chunk_y < 3; chunk_y++) {
@@ -718,9 +763,9 @@ extern GAME_UPDATE(game_update) {
           for (i32 tile_x = 0; tile_x < CHUNK_SIZE; tile_x++) {
             char ch = ascii_chunk[tile_y*CHUNK_SIZE + tile_x];
             if (ch == '#') {
-              chunk.tiles[tile_y*CHUNK_SIZE + tile_x] = Terrain_Kind_WALL;
+              chunk.tiles[tile_y*CHUNK_SIZE + tile_x].terrain = Terrain_Kind_WALL;
             } else if (ch == '_') {
-              chunk.tiles[tile_y*CHUNK_SIZE + tile_x] = Terrain_Kind_GRASS;
+              chunk.tiles[tile_y*CHUNK_SIZE + tile_x].terrain = Terrain_Kind_GRASS;
             }
           }
         }
@@ -761,26 +806,7 @@ extern GAME_UPDATE(game_update) {
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group _group;
   Render_Group *group = &_group;
-#if 0
-  {
-#define COLOR_RED V4(1, 0, 0, 1)
-#define COLOR_BLUE V4(0, 1, 0, 1)
-#define COLOR_GREEN V4(0, 0, 1, 1)
-    Ui_Group _group;
-    Ui_Group *group = &_group;
-    ui_group_init(&state->temp, state, group, 1000, &state->camera, screen_size);
-    Ui_Props wrapper_props = (Ui_Props){
-      .width = 10.0f,
-    };
-    ui_flex(group, wrapper_props); {
-      Ui_Props red_props = (Ui_Props){
-        .width = 5.0f,
-      };
-      ui_rect(group, COLOR_RED, red_props);
-      ui_rect(group, COLOR_BLUE, {0});
-    } ui_flex_end(group);
-  }
-#endif
+  
   
   render_group_init(&state->temp, state, group, 10000, &state->camera, screen_size);
   
@@ -796,11 +822,13 @@ extern GAME_UPDATE(game_update) {
   
   for (u32 chunk_index = 0; chunk_index < sb_count(state->tile_map.chunks); chunk_index++) {
     Tile_Chunk *chunk = state->tile_map.chunks + chunk_index;
+    //if (chunk->x != -1 || chunk->y != 0) continue;
+    
     for (i32 tile_y = 0; tile_y < CHUNK_SIZE; tile_y++) {
       for (i32 tile_x = 0; tile_x < CHUNK_SIZE; tile_x++) {
         Sprite spr = {0};
-        Terrain_Kind terrain = chunk->tiles[tile_y*CHUNK_SIZE + tile_x];
-        switch (terrain) {
+        Tile *tile = chunk->tiles + tile_y*CHUNK_SIZE + tile_x;
+        switch (tile->terrain) {
           case Terrain_Kind_GRASS: {
             spr = state->spr_grass;
           } break;
@@ -851,6 +879,79 @@ extern GAME_UPDATE(game_update) {
       }
       
       state->camera.p = e->t.p;
+      
+      rect2 bbox = get_bbox(e);
+      v2 corners[] = {
+        bbox.min,
+        V2(bbox.min.x, bbox.max.y),
+        bbox.max,
+        V2(bbox.max.x, bbox.min.y),
+      };
+#define EPS 0.001f
+#if 0
+      corners[0].x += EPS;
+      corners[0].y += EPS;
+      corners[1].x -= EPS;
+      corners[1].y -= EPS;
+      corners[2].x += EPS;
+      corners[2].y -= EPS;
+      corners[3].x -= EPS;
+      corners[3].y += EPS;
+#endif
+      
+      for (i32 corner_index = 0;
+           corner_index < 4;
+           corner_index++) {
+        v2 corner = corners[corner_index];
+        
+        Tile_Position tile_p = get_tile_position(corner);
+        Tile *tile = get_tile(&state->tile_map, tile_p);
+        if (tile->terrain == Terrain_Kind_WALL) {
+          v2 world_p = V2((f32)(tile_p.chunk_x*CHUNK_SIZE + tile_p.tile_x)*TILE_SIZE_IN_METERS,
+                          (f32)(tile_p.chunk_y*CHUNK_SIZE + tile_p.tile_y)*TILE_SIZE_IN_METERS);
+          
+          Transform t = transform_default();
+          t.p = v2_to_v3(world_p, 0);
+          
+          render_save(group);
+          render_color(group, V4(1, 0, 0, 0.5f));
+          
+          rect2 wall_bbox = rect2_center_size(world_p, V2(1, 1));
+          push_rect(group, wall_bbox);
+          
+          render_restore(group);
+          
+          b32 bias_x = corner_index >= 2;
+          b32 bias_y = corner_index == 1 || corner_index == 2;
+          
+          f32 pen_x = bias_x 
+            ? bbox.max.x - wall_bbox.min.x 
+            : wall_bbox.max.x - bbox.min.x;
+          
+          f32 pen_y = bias_y
+            ? bbox.max.y - wall_bbox.min.y
+            : wall_bbox.max.y - bbox.min.y;
+          
+          if (pen_x > pen_y && pen_y > EPS) {
+            e->t.p.y += bias_y ? -pen_y : pen_y;
+            e->d_p.y = 0;
+          } else if (pen_x < pen_y && pen_x > EPS) {
+            e->t.p.x += bias_x ? -pen_x : pen_x;
+            e->d_p.x = 0;
+          }
+          
+          bbox = get_bbox(e);
+          
+#if 0
+          render_color(group, V4(0, 0, 0, 1));
+          char *buf = arena_push_array(scratch, char, 256);
+          sprintf_s(buf, 256, "p: (%0.5f, %0.2f)", e->t.p.x, e->t.p.y);
+          push_text(group, from_c_string(buf));
+#endif
+          // TODO(lvl5): do the collision properly
+        }
+        
+      }
     }
     
     if (e->lifetime.active) {

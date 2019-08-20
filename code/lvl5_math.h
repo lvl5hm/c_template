@@ -110,6 +110,11 @@ i32 round_f32_i32(f32 a) {
   return result;
 }
 
+i32 floor_f32_i32(f32 a) {
+  i32 result = (i32)floorf(a);
+  return result;
+}
+
 f32 round_f32(f32 a) {
   f32 result = roundf(a);
   return result;
@@ -905,6 +910,13 @@ rect2 rect2_center_size(v2 center, v2 size) {
   v2 half_size = v2_mul(size, 0.5f);
   result.min = v2_sub(center, half_size);
   result.max = v2_add(center, half_size);
+  return result;
+}
+
+rect2 rect2_inverted_infinity() {
+  rect2 result;
+  result.min = V2(INFINITY, INFINITY);
+  result.max = V2(-INFINITY, -INFINITY);
   return result;
 }
 
