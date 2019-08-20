@@ -616,13 +616,12 @@ extern GAME_UPDATE(game_update) {
     // NOTE(lvl5): transient memory can be destroyed at this point
     platform = _platform;
     gl = _platform.gl;
+    scratch = &state->scratch;
     
 #define SCRATCH_SIZE kilobytes(32)
     arena_init(&state->scratch, memory.temp, SCRATCH_SIZE);
     arena_init(&state->temp, memory.temp + SCRATCH_SIZE, 
                memory.temp_size - SCRATCH_SIZE);
-    
-    scratch = &state->scratch;
   }
   
   if (!state->is_initialized) {
@@ -630,10 +629,11 @@ extern GAME_UPDATE(game_update) {
                memory.perm_size - sizeof(State));
     debug_init(&state->temp, memory.debug + sizeof(Debug_State));
     
-    // NOTE(lvl5): when live reloading, the sound file can be overwritten
+    // NOTE(lvl5): when live reloading, the sound files can be overwritten
     // with garbage since it's located in temp arena right now
     state->test_sound = load_wav(&state->temp, 
                                  const_string("sounds/durarara.wav"));
+    sound_play(&state->sound_state, &state->test_sound, Sound_Type_MUSIC);
     state->snd_bop = load_wav(&state->temp, const_string("sounds/bop.wav"));
     
     debug_add_arena(&state->arena, const_string("main"));

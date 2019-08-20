@@ -84,43 +84,62 @@ Bitmap make_empty_bitmap(Arena *arena, i32 width, i32 height) {
 
 
 
-Texture_Atlas make_texture_atlas_from_bitmaps(Arena *arena, Bitmap *bitmaps, i32 count) {
+Texture_Atlas make_texture_atlas_from_bitmaps(Arena *arena, i32 max_width, Bitmap *bitmaps, i32 count) {
   Texture_Atlas result = {0};
   result.sprite_count = count;
   result.rects = arena_push_array(arena, rect2, count);
   
-  i32 max_width = 0;
-  i32 total_height = 0;
+#define PADDING_X 4
 #define PADDING_Y 4
   
+  i32 current_x = 0;
+  i32 current_y = 0;
+  i32 max_line_height = 0;
+  
   for (i32 bitmap_index = 0; bitmap_index < count; bitmap_index++) {
     Bitmap *bmp = bitmaps + bitmap_index;
-    if (bmp->width > max_width) {
-      max_width = bmp->width;
+    assert(bmp->width <= max_width + PADDING_X);
+    
+    rect2 *rect = result.rects + bitmap_index;
+    if (current_x + bmp->width > max_width) {
+      current_x = 0;
+      current_y += max_line_height;
     }
-    total_height += bmp->height + PADDING_Y;
+    
+    rect->min.x = (f32)current_x;
+    rect->min.y = (f32)current_y;
+    rect->max.x = (f32)(current_x + bmp->width);
+    rect->max.y = (f32)(current_y + bmp->height);
+    
+    current_x += bmp->width;
+    
+    if (bmp->height > max_line_height) {
+      max_line_height = bmp->height;
+    }
   }
   
-  result.bmp = make_empty_bitmap(arena, max_width, total_height);
-  i32 current_y = 0;
-  
+  result.bmp = make_empty_bitmap(arena, max_width, current_y+max_line_height);
   for (i32 bitmap_index = 0; bitmap_index < count; bitmap_index++) {
     Bitmap *bmp = bitmaps + bitmap_index;
+    
     rect2 *rect = result.rects + bitmap_index;
     
-    rect->min = V2(0, (f32)current_y/(f32)total_height);
-    rect->max = V2(bmp->width/(f32)max_width, rect->min.y + (f32)bmp->height/(f32)total_height);
-    
-    u32 *row = (u32 *)result.bmp.data + current_y*max_width;
+    // NOTE(lvl5): copy bitmap data
+    u32 *row = (u32 *)result.bmp.data + (i32)rect->min.y*max_width + (i32)rect->min.x;
     for (i32 y = 0; y < bmp->height; y++) {
       u32 *dst = row;
       for (i32 x = 0; x < bmp->width; x++) {
         *dst++ = ((u32 *)bmp->data)[y*bmp->width + x];
       }
-      row += max_width;
+      row += result.bmp.width;
     }
     
-    current_y += bmp->height;
+    // NOTE(lvl5): resize rects to be texture-relative (right now they are in pixels)
+    v2 size = rect2_get_size(*rect);
+    rect->min.x /= result.bmp.width;
+    rect->min.y /= result.bmp.height;
+    rect->max.x /= result.bmp.width;
+    rect->max.y /= result.bmp.height;
   }
   
   return result;
@@ -139,7 +158,7 @@ Texture_Atlas make_texture_atlas_from_folder(Arena *temp, Arena *perm, String fo
     bitmaps[file_index] = sprite_bmp;
   }
   
-  Texture_Atlas result = make_texture_atlas_from_bitmaps(perm, bitmaps, dir.count); 
+  Texture_Atlas result = make_texture_atlas_from_bitmaps(perm, 512, bitmaps, dir.count); 
   arena_set_mark(temp, loaded_bitmaps_memory);
   
   return result;
@@ -212,7 +231,7 @@ Font load_ttf(Arena *temp, Arena *perm, String file_name) {
   
   arena_set_mark(temp, loaded_bitmaps_memory);
   
-  Texture_Atlas atlas = make_texture_atlas_from_bitmaps(perm, bitmaps, sb_count(bitmaps));
+  Texture_Atlas atlas = make_texture_atlas_from_bitmaps(perm, 512, bitmaps, sb_count(bitmaps));
   result.atlas = atlas;
   
   return result;
