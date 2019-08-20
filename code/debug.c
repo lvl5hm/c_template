@@ -328,8 +328,8 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
         f32 self_percent = (f32)node->self_duration/(f32)parent_duration*100;
         
         char *name = to_c_string(&debug_state->arena, node->name);
-        char buffer[256];
-        sprintf_s(buffer, array_count(buffer), "%s: %.2f%% (self %.2f%%)  (%lld)", 
+        char *buffer = arena_push_array(scratch, char, 256);
+        sprintf_s(buffer, 256, "%s: %.2f%% (self %.2f%%)  (%lld)", 
                   name, percent, self_percent, node->duration);
         
         String str = from_c_string(buffer);
@@ -439,8 +439,8 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
             f32 self_percent = (f32)node->self_duration/(f32)parent_duration*100;
             
             char *name = to_c_string(&debug_state->arena, node->name);
-            char buffer[256];
-            sprintf_s(buffer, array_count(buffer), 
+            char *buffer = arena_push_array(scratch, char, 256);
+            sprintf_s(buffer, 256, 
                       "%s: %.2f%% (%lld) %d hits (%lld cy/h)", 
                       name, self_percent, node->self_duration,
                       node->count, node->self_duration/node->count);

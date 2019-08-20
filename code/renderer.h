@@ -90,6 +90,7 @@ typedef struct {
   Render_Item *items;
   i32 item_count;
   i32 item_capacity;
+  i32 expected_quad_count;
   
   v2 screen_size;
   Camera *camera;

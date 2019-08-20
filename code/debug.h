@@ -3,6 +3,8 @@
 #include "lvl5_intrinsics.h"
 #include "lvl5_string.h"
 
+Arena *scratch;
+
 typedef enum {
   Debug_Type_NONE,
   Debug_Type_BEGIN_TIMER,

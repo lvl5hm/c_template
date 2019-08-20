@@ -82,6 +82,7 @@ Render_Item *push_render_item_(Render_Group *group, Render_Type type) {
   Render_Item *item = group->items + group->item_count++;
   item->type = type;
   item->state = group->state;
+  group->expected_quad_count++;
   return item;
 }
 
@@ -181,36 +182,9 @@ f32 text_get_size(Render_Group *group, String text) {
 void push_text(Render_Group *group, String text) {
   DEBUG_FUNCTION_BEGIN();
   
-#if 1
   Render_Text *entry = push_render_item(group, Text);
   entry->text = text;
-#else
-  render_save(group);
-  render_scale(group, v3_invert(V3(PIXELS_PER_METER, PIXELS_PER_METER, 1)));
-  Font *font = group->state.font;
-  for (u32 char_index = 0; char_index < text.count; char_index++) {
-    char ch = text.data[char_index];
-    
-    assert(ch >= font->first_codepoint_index && 
-           ch < font->first_codepoint_index + font->codepoint_count);
-    
-    Codepoint_Metrics metrics = font_get_metrics(font, ch);
-    Sprite spr = font_get_sprite(font, ch);
-    
-    rect2 rect = sprite_get_rect(spr);
-    v2 size_pixels = v2_hadamard(rect2_get_size(rect), 
-                                 V2((f32)spr.atlas->bmp.width,
-                                    (f32)spr.atlas->bmp.height));
-    
-    Transform letter_t = transform_default();
-    letter_t.scale = v2_to_v3(size_pixels, 0);
-    push_sprite(group, spr, letter_t);
-    
-    render_translate(group, V3(metrics.advance, 0, 0));
-  }
-  
-  render_restore(group);
-#endif
+  group->expected_quad_count += text.count - 1; // 1 is automatically pushed by push_render_item()
   
   DEBUG_FUNCTION_END();
 }
@@ -325,6 +299,9 @@ void render_group_init(Arena *arena, State *state, Render_Group *group,
                        i32 item_capacity, Camera *camera, v2 screen_size) {
   DEBUG_FUNCTION_BEGIN();
   
+  Render_Group zero_group = {0};
+  *group = zero_group;
+  
   group->items = arena_push_array(arena, Render_Item, item_capacity);
   group->item_count = 0;
   group->screen_size = screen_size;
@@ -362,108 +339,109 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
   
   assert(group->state_stack_count == 0);
   
-  if (group->item_count != 0) {
-    Quad_Instance *instances = sb_init(arena, Quad_Instance, group->item_count, true);
-    
-    Texture_Atlas *atlas = 0;
-    
-    DEBUG_SECTION_BEGIN(_push_instances);
-    for (i32 item_index = 0; item_index < group->item_count; item_index++) {
-      Render_Item *item = group->items + item_index;
-      switch (item->type) {
-        case Render_Type_Sprite: {
-          Sprite sprite = item->Sprite.sprite;
+  if (group->item_count == 0) {
+    return;
+  }
+  Quad_Instance *instances = sb_init(arena, Quad_Instance, group->expected_quad_count, true);
+  
+  Texture_Atlas *atlas = 0;
+  
+  DEBUG_SECTION_BEGIN(_push_instances);
+  for (i32 item_index = 0; item_index < group->item_count; item_index++) {
+    Render_Item *item = group->items + item_index;
+    switch (item->type) {
+      case Render_Type_Sprite: {
+        Sprite sprite = item->Sprite.sprite;
+        
+        // TODO(lvl5): remove duplicate code
+        if (atlas && atlas != sprite.atlas) {
+          mat4 view_matrix = camera_get_view_matrix(group->camera);
+          mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
+          quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
+                             projection_matrix, instances, sb_count(instances));
+          sb_count(instances) = 0;
+        }
+        
+        
+        mat4 model_m = item->state.matrix;
+        rect2 tex_rect = sprite_get_rect(sprite);
+        
+        Quad_Instance inst = {0};
+        inst.model = mat4_transpose(model_m);
+        inst.tex_offset = tex_rect.min;
+        inst.tex_scale = rect2_get_size(tex_rect);
+        inst.color = item->state.color;
+        
+        sb_push(instances, inst);
+        
+        atlas = sprite.atlas;
+      } break;
+      
+      case Render_Type_Rect: {
+        
+      } break;
+      
+      case Render_Type_Text: {
+        if (atlas && sb_count(instances)) {
+          mat4 view_matrix = camera_get_view_matrix(group->camera);
+          mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
+          quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
+                             projection_matrix, instances, sb_count(instances));
+          sb_count(instances) = 0;
+        }
+        
+        Font *font = item->state.font;
+        String text = item->Text.text;
+        mat4 model_m = item->state.matrix;
+        v3 scale = v3_invert(V3(PIXELS_PER_METER, PIXELS_PER_METER, 1.0f));
+        model_m = mat4_mul_mat4(model_m, mat4_scaled(scale));
+        
+        for (u32 char_index = 0; char_index < text.count; char_index++) {
+          char ch = text.data[char_index];
           
-          // TODO(lvl5): remove duplicate code
-          if (atlas && atlas != sprite.atlas) {
-            mat4 view_matrix = camera_get_view_matrix(group->camera);
-            mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
-            quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
-                               projection_matrix, instances, sb_count(instances));
-            sb_count(instances) = 0;
-          }
+          assert(ch >= font->first_codepoint_index && 
+                 ch < font->first_codepoint_index + font->codepoint_count);
           
+          Codepoint_Metrics metrics = font_get_metrics(font, ch);
+          Sprite spr = font_get_sprite(font, ch);
+          rect2 tex_rect = sprite_get_rect(spr);
           
-          mat4 model_m = item->state.matrix;
-          rect2 tex_rect = sprite_get_rect(sprite);
+          v2 size_pixels = v2_hadamard(rect2_get_size(tex_rect), 
+                                       V2((f32)spr.atlas->bmp.width,
+                                          (f32)spr.atlas->bmp.height));
+          
+          mat4 self_m = model_m;
+          
+          self_m.e00 *= size_pixels.x;
+          self_m.e11 *= size_pixels.y;
+          
+          self_m.e30 -= spr.origin.x/PIXELS_PER_METER;
+          self_m.e31 -= spr.origin.y/PIXELS_PER_METER;
           
           Quad_Instance inst = {0};
-          inst.model = mat4_transpose(model_m);
+          inst.model = mat4_transpose(self_m);
           inst.tex_offset = tex_rect.min;
           inst.tex_scale = rect2_get_size(tex_rect);
           inst.color = item->state.color;
           
           sb_push(instances, inst);
           
-          atlas = sprite.atlas;
-        } break;
-        
-        case Render_Type_Rect: {
-          
-        } break;
-        
-        case Render_Type_Text: {
-          if (atlas && sb_count(instances)) {
-            mat4 view_matrix = camera_get_view_matrix(group->camera);
-            mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
-            quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
-                               projection_matrix, instances, sb_count(instances));
-            sb_count(instances) = 0;
-          }
-          
-          Font *font = item->state.font;
-          String text = item->Text.text;
-          mat4 model_m = item->state.matrix;
-          v3 scale = v3_invert(V3(PIXELS_PER_METER, PIXELS_PER_METER, 1.0f));
-          model_m = mat4_mul_mat4(model_m, mat4_scaled(scale));
-          
-          for (u32 char_index = 0; char_index < text.count; char_index++) {
-            char ch = text.data[char_index];
-            
-            assert(ch >= font->first_codepoint_index && 
-                   ch < font->first_codepoint_index + font->codepoint_count);
-            
-            Codepoint_Metrics metrics = font_get_metrics(font, ch);
-            Sprite spr = font_get_sprite(font, ch);
-            rect2 tex_rect = sprite_get_rect(spr);
-            
-            v2 size_pixels = v2_hadamard(rect2_get_size(tex_rect), 
-                                         V2((f32)spr.atlas->bmp.width,
-                                            (f32)spr.atlas->bmp.height));
-            
-            mat4 self_m = model_m;
-            
-            self_m.e00 *= size_pixels.x;
-            self_m.e11 *= size_pixels.y;
-            
-            self_m.e30 -= spr.origin.x/PIXELS_PER_METER;
-            self_m.e31 -= spr.origin.y/PIXELS_PER_METER;
-            
-            Quad_Instance inst = {0};
-            inst.model = mat4_transpose(self_m);
-            inst.tex_offset = tex_rect.min;
-            inst.tex_scale = rect2_get_size(tex_rect);
-            inst.color = item->state.color;
-            
-            sb_push(instances, inst);
-            
-            f32 advance_meters = metrics.advance/PIXELS_PER_METER;
-            model_m.e30 += advance_meters;
-          }
-          atlas = &font->atlas;
-        } break;
-        
-        default: assert(false);
-      }
+          f32 advance_meters = metrics.advance/PIXELS_PER_METER;
+          model_m.e30 += advance_meters;
+        }
+        atlas = &font->atlas;
+      } break;
+      
+      default: assert(false);
     }
-    DEBUG_SECTION_END(_push_instances);
-    
-    mat4 view_matrix = camera_get_view_matrix(group->camera);
-    mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
-    
-    quad_renderer_draw(renderer, &atlas->bmp, view_matrix, projection_matrix, 
-                       instances, sb_count(instances));
   }
+  DEBUG_SECTION_END(_push_instances);
+  
+  mat4 view_matrix = camera_get_view_matrix(group->camera);
+  mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
+  
+  quad_renderer_draw(renderer, &atlas->bmp, view_matrix, projection_matrix, 
+                     instances, sb_count(instances));
   
   DEBUG_FUNCTION_END();
 }

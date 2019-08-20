@@ -621,6 +621,8 @@ extern GAME_UPDATE(game_update) {
     arena_init(&state->scratch, memory.temp, SCRATCH_SIZE);
     arena_init(&state->temp, memory.temp + SCRATCH_SIZE, 
                memory.temp_size - SCRATCH_SIZE);
+    
+    scratch = &state->scratch;
   }
   
   if (!state->is_initialized) {
