@@ -705,12 +705,36 @@ extern GAME_UPDATE(game_update) {
   }
 #endif
   
-  state->camera.t.scale = v2_to_v3(v2_div(screen_size, PIXELS_PER_METER), 1);
+  state->camera.far = 10.0f;
+  state->camera.near = 0.0f;
+  state->camera.width = screen_size.x/PIXELS_PER_METER;
+  state->camera.height = screen_size.y/PIXELS_PER_METER;
   
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group _group;
   Render_Group *group = &_group;
-  render_group_init(&state->temp, state, group, 100000, &state->camera, screen_size);
+#if 0
+  {
+#define COLOR_RED V4(1, 0, 0, 1)
+#define COLOR_BLUE V4(0, 1, 0, 1)
+#define COLOR_GREEN V4(0, 0, 1, 1)
+    Ui_Group _group;
+    Ui_Group *group = &_group;
+    ui_group_init(&state->temp, state, group, 1000, &state->camera, screen_size);
+    Ui_Props wrapper_props = (Ui_Props){
+      .width = 10.0f,
+    };
+    ui_flex(group, wrapper_props); {
+      Ui_Props red_props = (Ui_Props){
+        .width = 5.0f,
+      };
+      ui_rect(group, COLOR_RED, red_props);
+      ui_rect(group, COLOR_BLUE, {0});
+    } ui_flex_end(group);
+  }
+#endif
+  
+  render_group_init(&state->temp, state, group, 10000, &state->camera, screen_size);
   
   global_group = group;
   render_font(group, &state->font);
@@ -718,7 +742,7 @@ extern GAME_UPDATE(game_update) {
 #if 1
   //v2 half_screen_meters = v2_div_s(screen_size, PIXELS_PER_METER*2);
   v2 mouse_meters = get_mouse_p_meters(input, screen_size);
-  v2 mouse_world = v2_add(state->camera.t.p.xy, mouse_meters);
+  v2 mouse_world = v2_add(state->camera.p.xy, mouse_meters);
 #endif
   
   
@@ -752,7 +776,7 @@ extern GAME_UPDATE(game_update) {
         }
       }
       
-      state->camera.t.p = e->t.p;
+      state->camera.p = e->t.p;
     }
     
     if (e->lifetime.active) {
@@ -787,6 +811,9 @@ extern GAME_UPDATE(game_update) {
     
     render_translate(group, V3(0, -0.2f, 0));
     push_text(group, mp_string);
+    
+    String lipsum = const_string("There are many variations of passages of Lorem Ipsum available, but the majority have suffered alteration in some form, by injected humour, or randomised words which don't look even slightly believable. If you are going to use a passage of Lorem Ipsum, you need to be sure there isn't anything embarrassing hidden in the middle of text. All the Lorem Ipsum generators on the Internet tend to repeat predefined chunks as necessary, making this the first true generator on the Internet. It uses a dictionary of over 200 Latin words, combined with a handful of model sentence structures, to generate Lorem Ipsum which looks reasonable. The generated Lorem Ipsum is therefore always free from repetition, injected humour, or non-characteristic words etc.");
+    push_text(group, lipsum);
     
     render_restore(group);
     

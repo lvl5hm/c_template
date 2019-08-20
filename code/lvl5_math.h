@@ -61,6 +61,11 @@ f32 cos_f32(f32 a) {
   return result;
 }
 
+f32 tan_f32(f32 a) {
+  f32 result = tanf(a);
+  return result;
+}
+
 f32 sqrt_f32(f32 a) {
   f32 result = sqrtf(a);
   return result;
@@ -105,10 +110,17 @@ i32 round_f32_i32(f32 a) {
   return result;
 }
 
+f32 round_f32(f32 a) {
+  f32 result = roundf(a);
+  return result;
+}
+
 i16 round_f32_i16(f32 a) {
   i16 result = (i16)roundf(a);
   return result;
 }
+
+
 
 // v2
 
@@ -579,6 +591,11 @@ v2 mat2_mul_v2(mat2 m, v2 v) {
   return result;
 }
 
+f32 mat2_det(mat2 m) {
+  f32 result = m.e00*m.e11 - m.e10*m.e01;
+  return result;
+}
+
 // mat3
 typedef union {
   f32 e[9];
@@ -602,6 +619,12 @@ mat3 Mat3(f32 e00, f32 e10, f32 e20,
   result.e02 = e02;
   result.e12 = e12;
   result.e22 = e22;
+  return result;
+}
+
+f32 mat3_det(mat3 m) {
+  f32 result = m.e00*m.e11*m.e22 + m.e10*m.e21*m.e02 + m.e20*m.e01*m.e12 -
+    m.e20*m.e11*m.e02 - m.e10*m.e01*m.e22 - m.e00*m.e21*m.e12;
   return result;
 }
 
@@ -684,7 +707,6 @@ v4 mat4_mul_v4(mat4 m, v4 v) {
 inline mat4 mat4_mul_mat4(mat4 a, mat4 b) {
   mat4 result;
   
-#if 1
   result.e00 = a.e00*b.e00 + a.e10*b.e01 + a.e20*b.e02 + a.e30*b.e03;
   result.e10 = a.e00*b.e10 + a.e10*b.e11 + a.e20*b.e12 + a.e30*b.e13;
   result.e20 = a.e00*b.e20 + a.e10*b.e21 + a.e20*b.e22 + a.e30*b.e23;
@@ -704,70 +726,6 @@ inline mat4 mat4_mul_mat4(mat4 a, mat4 b) {
   result.e13 = a.e03*b.e10 + a.e13*b.e11 + a.e23*b.e12 + a.e33*b.e13;
   result.e23 = a.e03*b.e20 + a.e13*b.e21 + a.e23*b.e22 + a.e33*b.e23;
   result.e33 = a.e03*b.e30 + a.e13*b.e31 + a.e23*b.e32 + a.e33*b.e33;
-  
-#else
-  
-  __m128 a00 = _mm_set_ps1(a.e00);
-  __m128 a01 = _mm_set_ps1(a.e01);
-  __m128 a02 = _mm_set_ps1(a.e02);
-  __m128 a03 = _mm_set_ps1(a.e03);
-  
-  __m128 a10 = _mm_set_ps1(a.e10);
-  __m128 a11 = _mm_set_ps1(a.e11);
-  __m128 a12 = _mm_set_ps1(a.e12);
-  __m128 a13 = _mm_set_ps1(a.e13);
-  
-  __m128 a20 = _mm_set_ps1(a.e20);
-  __m128 a21 = _mm_set_ps1(a.e21);
-  __m128 a22 = _mm_set_ps1(a.e22);
-  __m128 a23 = _mm_set_ps1(a.e23);
-  
-  __m128 a30 = _mm_set_ps1(a.e30);
-  __m128 a31 = _mm_set_ps1(a.e31);
-  __m128 a32 = _mm_set_ps1(a.e32);
-  __m128 a33 = _mm_set_ps1(a.e33);
-  
-  __m128 b_row_0 = _mm_load_ps(&b.e00);
-  __m128 b_row_1 = _mm_load_ps(&b.e01);
-  __m128 b_row_2 = _mm_load_ps(&b.e02);
-  __m128 b_row_3 = _mm_load_ps(&b.e03);
-  
-  __m128 res_row_0, res_row_1, res_row_2, res_row_3;
-  {
-    __m128 res_0 = _mm_mul_ps(a00, b_row_0);
-    __m128 res_1 = _mm_mul_ps(a10, b_row_1);
-    __m128 res_2 = _mm_mul_ps(a20, b_row_2);
-    __m128 res_3 = _mm_mul_ps(a30, b_row_3);
-    res_row_0 = _mm_add_ps(res_0, _mm_add_ps(res_1, _mm_add_ps(res_2, res_3)));
-  }
-  {
-    __m128 res_0 = _mm_mul_ps(a01, b_row_0);
-    __m128 res_1 = _mm_mul_ps(a11, b_row_1);
-    __m128 res_2 = _mm_mul_ps(a21, b_row_2);
-    __m128 res_3 = _mm_mul_ps(a31, b_row_3);
-    res_row_1 = _mm_add_ps(res_0, _mm_add_ps(res_1, _mm_add_ps(res_2, res_3)));
-  }
-  {
-    __m128 res_0 = _mm_mul_ps(a02, b_row_0);
-    __m128 res_1 = _mm_mul_ps(a12, b_row_1);
-    __m128 res_2 = _mm_mul_ps(a22, b_row_2);
-    __m128 res_3 = _mm_mul_ps(a32, b_row_3);
-    res_row_2 = _mm_add_ps(res_0, _mm_add_ps(res_1, _mm_add_ps(res_2, res_3)));
-  }
-  {
-    __m128 res_0 = _mm_mul_ps(a03, b_row_0);
-    __m128 res_1 = _mm_mul_ps(a13, b_row_1);
-    __m128 res_2 = _mm_mul_ps(a23, b_row_2);
-    __m128 res_3 = _mm_mul_ps(a33, b_row_3);
-    res_row_3 = _mm_add_ps(res_0, _mm_add_ps(res_1, _mm_add_ps(res_2, res_3)));
-  }
-  
-  __m128 *res = (__m128 *)&result;
-  res[0] = res_row_0;
-  res[1] = res_row_1;
-  res[2] = res_row_2;
-  res[3] = res_row_3;
-#endif
   
   return result;
 }
@@ -820,34 +778,31 @@ v3 v3_rotate(v3 a, v4 rotor) {
 #endif
 
 
-mat4 mat4_scale(mat4 m, v3 scale) {
+mat4 mat4_scaled(v3 scale) {
   mat4 scale_m = Mat4(scale.x, 0,         0,         0,
                       0,       scale.y,   0,         0,
                       0,       0,         scale.z,   0,
                       0,       0,         0,         1.0f);
   
-  mat4 result = mat4_mul_mat4(m, scale_m);
-  return result;
+  return scale_m;
 }
 
-mat4 mat4_rotate(mat4 m, f32 angle) {
+mat4 mat4_rotated(f32 angle) {
   f32 cos = cos_f32(-angle);
   f32 sin = sin_f32(-angle);
   mat4 rotate_m = Mat4(cos,  sin,  0,    0,
                        -sin, cos,  0,    0,
                        0,    0,    1.0f, 0,
                        0,    0,    0,    1.0f);
-  mat4 result = mat4_mul_mat4(m, rotate_m);
-  return result;
+  return rotate_m;
 }
 
-mat4 mat4_translate(mat4 m, v3 p) {
+mat4 mat4_translated(v3 p) {
   mat4 translate_m = Mat4(1.0f, 0,    0,    p.x,
                           0,    1.0f, 0,    p.y,
                           0,    0,    1.0f, p.z,
                           0,    0,    0,    1.0f);
-  mat4 result = mat4_mul_mat4(m, translate_m);
-  return result;
+  return translate_m;
 }
 
 mat4 mat4_transpose(mat4 m) {
@@ -857,6 +812,69 @@ mat4 mat4_transpose(mat4 m) {
       result.e[y*4 + x] = m.e[x*4 + y];
     }
   }
+  return result;
+}
+
+mat4 mat4_orthographic(f32 l, f32 r, f32 b, f32 t, f32 n, f32 f) {
+  mat4 result = Mat4(2/(r-l),      0,            0,            0,
+                     0,            2/(t-b),      0,            0,
+                     0,            0,            2/(f-n),      0,
+                     -(r+l)/(r-l), -(t+b)/(t-b), -(f+b)/(f-n), 1);
+  return result;
+}
+
+mat4 mat4_perspective(f32 fov_angle, f32 f, f32 n) {
+  f32 v = 1.0f/(n*tan_f32(fov_angle*0.5f));
+  f32 a = f/(f - n);
+  f32 b = -n*a;
+  mat4 result = Mat4(v, 0, 0,  0,
+                     0, v, 0,  0,
+                     0, 0, a, -1,
+                     0, 0, b,  0);
+  return result;
+}
+
+mat4 mat4_inverse(mat4 m) {
+  f32 A2323 = m.e22 * m.e33 - m.e23 * m.e32;
+  f32 A1323 = m.e21 * m.e33 - m.e23 * m.e31;
+  f32 A1223 = m.e21 * m.e32 - m.e22 * m.e31;
+  f32 A0323 = m.e20 * m.e33 - m.e23 * m.e30;
+  f32 A0223 = m.e20 * m.e32 - m.e22 * m.e30;
+  f32 A0123 = m.e20 * m.e31 - m.e21 * m.e30;
+  f32 A2313 = m.e12 * m.e33 - m.e13 * m.e32;
+  f32 A1313 = m.e11 * m.e33 - m.e13 * m.e31;
+  f32 A1213 = m.e11 * m.e32 - m.e12 * m.e31;
+  f32 A2312 = m.e12 * m.e23 - m.e13 * m.e22;
+  f32 A1312 = m.e11 * m.e23 - m.e13 * m.e21;
+  f32 A1212 = m.e11 * m.e22 - m.e12 * m.e21;
+  f32 A0313 = m.e10 * m.e33 - m.e13 * m.e30;
+  f32 A0213 = m.e10 * m.e32 - m.e12 * m.e30;
+  f32 A0312 = m.e10 * m.e23 - m.e13 * m.e20;
+  f32 A0212 = m.e10 * m.e22 - m.e12 * m.e20;
+  f32 A0113 = m.e10 * m.e31 - m.e11 * m.e30;
+  f32 A0112 = m.e10 * m.e21 - m.e11 * m.e20;
+  
+  f32 det = 1 / (m.e00 * (m.e11 * A2323 - m.e12 * A1323 + m.e13 * A1223)
+                 - m.e01 * (m.e10 * A2323 - m.e12 * A0323 + m.e13 * A0223)
+                 + m.e02 * (m.e10 * A1323 - m.e11 * A0323 + m.e13 * A0123)
+                 - m.e03 * (m.e10 * A1223 - m.e11 * A0223 + m.e12 * A0123));
+  
+  mat4 result = Mat4(det * (m.e11 * A2323 - m.e12 * A1323 + m.e13 * A1223),
+                     det * -(m.e01 * A2323 - m.e02 * A1323 + m.e03 * A1223),
+                     det * (m.e01 * A2313 - m.e02 * A1313 + m.e03 * A1213),
+                     det * -(m.e01 * A2312 - m.e02 * A1312 + m.e03 * A1212),
+                     det * -(m.e10 * A2323 - m.e12 * A0323 + m.e13 * A0223),
+                     det * (m.e00 * A2323 - m.e02 * A0323 + m.e03 * A0223),
+                     det * -(m.e00 * A2313 - m.e02 * A0313 + m.e03 * A0213),
+                     det * (m.e00 * A2312 - m.e02 * A0312 + m.e03 * A0212),
+                     det * (m.e10 * A1323 - m.e11 * A0323 + m.e13 * A0123),
+                     det * -(m.e00 * A1323 - m.e01 * A0323 + m.e03 * A0123),
+                     det * (m.e00 * A1313 - m.e01 * A0313 + m.e03 * A0113),
+                     det * -(m.e00 * A1312 - m.e01 * A0312 + m.e03 * A0112),
+                     det * -(m.e10 * A1223 - m.e11 * A0223 + m.e12 * A0123),
+                     det * (m.e00 * A1223 - m.e01 * A0223 + m.e02 * A0123),
+                     det * -(m.e00 * A1213 - m.e01 * A0213 + m.e02 * A0113),
+                     det * (m.e00 * A1212 - m.e01 * A0212 + m.e02 * A0112));
   return result;
 }
 

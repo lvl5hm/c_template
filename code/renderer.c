@@ -5,18 +5,18 @@
 
 mat4 transform_apply(mat4 matrix, Transform t) {
   mat4 result = matrix;
-  result = mat4_translate(result, t.p);
-  result = mat4_rotate(result, t.angle);
-  result = mat4_scale(result, t.scale);
+  result = mat4_mul_mat4(result, mat4_translated(t.p));
+  result = mat4_mul_mat4(result, mat4_rotated(t.angle));
+  result = mat4_mul_mat4(result, mat4_scaled(t.scale));
   
   return result;
 }
 
 mat4 transform_apply_inverse(mat4 matrix, Transform t) {
   mat4 result = matrix;
-  result = mat4_scale(result, v3_invert(t.scale));
-  result = mat4_rotate(result, -t.angle);
-  result = mat4_translate(result, v3_mul(t.p, -1));
+  result = mat4_mul_mat4(result, mat4_scaled(v3_invert(t.scale)));
+  result = mat4_mul_mat4(result, mat4_rotated(-t.angle));
+  result = mat4_mul_mat4(result, mat4_translated(v3_mul(t.p, -1)));
   
   return result;
 }
@@ -41,15 +41,15 @@ void render_restore(Render_Group *group) {
 }
 
 void render_translate(Render_Group *group, v3 p) {
-  group->state.matrix = mat4_translate(group->state.matrix, p);
+  group->state.matrix = mat4_mul_mat4(group->state.matrix, mat4_translated(p));
 }
 
 void render_scale(Render_Group *group, v3 scale) {
-  group->state.matrix = mat4_scale(group->state.matrix, scale);
+  group->state.matrix = mat4_mul_mat4(group->state.matrix,mat4_scaled(scale));
 }
 
 void render_rotate(Render_Group *group, f32 angle) {
-  group->state.matrix = mat4_rotate(group->state.matrix, angle);
+  group->state.matrix = mat4_mul_mat4(group->state.matrix, mat4_rotated(angle));
 }
 
 void render_transform(Render_Group *group, Transform t) {
@@ -181,19 +181,21 @@ f32 text_get_size(Render_Group *group, String text) {
 void push_text(Render_Group *group, String text) {
   DEBUG_FUNCTION_BEGIN();
   
+#if 1
+  Render_Text *entry = push_render_item(group, Text);
+  entry->text = text;
+#else
   render_save(group);
   render_scale(group, v3_invert(V3(PIXELS_PER_METER, PIXELS_PER_METER, 1)));
-  
+  Font *font = group->state.font;
   for (u32 char_index = 0; char_index < text.count; char_index++) {
     char ch = text.data[char_index];
     
-#if 0
     assert(ch >= font->first_codepoint_index && 
            ch < font->first_codepoint_index + font->codepoint_count);
-#endif
     
-    Codepoint_Metrics metrics = font_get_metrics(group->state.font, ch);
-    Sprite spr = font_get_sprite(group->state.font, ch);
+    Codepoint_Metrics metrics = font_get_metrics(font, ch);
+    Sprite spr = font_get_sprite(font, ch);
     
     rect2 rect = sprite_get_rect(spr);
     v2 size_pixels = v2_hadamard(rect2_get_size(rect), 
@@ -208,6 +210,7 @@ void push_text(Render_Group *group, String text) {
   }
   
   render_restore(group);
+#endif
   
   DEBUG_FUNCTION_END();
 }
@@ -289,7 +292,7 @@ void quad_renderer_destroy(Quad_Renderer *renderer) {
 }
 
 void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp,
-                        mat4 view_mat, Quad_Instance *instances, u32 instance_count) {
+                        mat4 view_mat, mat4 projection_mat, Quad_Instance *instances, u32 instance_count) {
   DEBUG_FUNCTION_BEGIN();
   
   DEBUG_SECTION_BEGIN(_buffer_data);
@@ -305,6 +308,7 @@ void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp,
   
   
   gl.UseProgram(renderer->shader);
+  gl_set_uniform_mat4(gl, renderer->shader, "u_projection", &projection_mat, 1);
   gl_set_uniform_mat4(gl, renderer->shader, "u_view", &view_mat, 1);
   
   DEBUG_SECTION_BEGIN(_draw_call);
@@ -334,13 +338,21 @@ void render_group_init(Arena *arena, State *state, Render_Group *group,
   DEBUG_FUNCTION_END();
 }
 
-mat4 camera_get_matrix(Camera *camera, v2 screen_size) {
-  Transform t = camera->t;
+
+mat4 camera_get_view_matrix(Camera *camera) {
   mat4 result = mat4_identity();
-  result = mat4_scale(result, V3(2, 2, 1));
-  result = mat4_scale(result, v3_invert(t.scale));
-  result = mat4_rotate(result, -t.angle);
-  result = mat4_translate(result, v3_mul(t.p, -1));
+  result = mat4_mul_mat4(result, mat4_rotated(-camera->angle));
+  result = mat4_mul_mat4(result, mat4_translated(v3_mul(camera->p, -1)));
+  
+  return result;
+}
+
+mat4 camera_get_projection_matrix(Camera *camera, v2 screen_size) {
+  f32 w = camera->width;
+  f32 h = camera->height;
+  mat4 result = mat4_orthographic(-w*0.5f, w*0.5f,
+                                  -h*0.5f, h*0.5f,
+                                  camera->near, camera->far);
   
   return result;
 }
@@ -351,8 +363,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
   assert(group->state_stack_count == 0);
   
   if (group->item_count != 0) {
-    Quad_Instance *instances = arena_push_array(arena, Quad_Instance, group->item_count);
-    i32 instance_count = 0;
+    Quad_Instance *instances = sb_init(arena, Quad_Instance, group->item_count, true);
     
     Texture_Atlas *atlas = 0;
     
@@ -365,10 +376,11 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           
           // TODO(lvl5): remove duplicate code
           if (atlas && atlas != sprite.atlas) {
-            mat4 view_matrix = camera_get_matrix(group->camera, group->screen_size);
+            mat4 view_matrix = camera_get_view_matrix(group->camera);
+            mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
             quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
-                               instances, instance_count);
-            instance_count = 0;
+                               projection_matrix, instances, sb_count(instances));
+            sb_count(instances) = 0;
           }
           
           
@@ -381,7 +393,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           inst.tex_scale = rect2_get_size(tex_rect);
           inst.color = item->state.color;
           
-          instances[instance_count++] = inst;
+          sb_push(instances, inst);
           
           atlas = sprite.atlas;
         } break;
@@ -390,14 +402,67 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           
         } break;
         
+        case Render_Type_Text: {
+          if (atlas && sb_count(instances)) {
+            mat4 view_matrix = camera_get_view_matrix(group->camera);
+            mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
+            quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
+                               projection_matrix, instances, sb_count(instances));
+            sb_count(instances) = 0;
+          }
+          
+          Font *font = item->state.font;
+          String text = item->Text.text;
+          mat4 model_m = item->state.matrix;
+          v3 scale = v3_invert(V3(PIXELS_PER_METER, PIXELS_PER_METER, 1.0f));
+          model_m = mat4_mul_mat4(model_m, mat4_scaled(scale));
+          
+          for (u32 char_index = 0; char_index < text.count; char_index++) {
+            char ch = text.data[char_index];
+            
+            assert(ch >= font->first_codepoint_index && 
+                   ch < font->first_codepoint_index + font->codepoint_count);
+            
+            Codepoint_Metrics metrics = font_get_metrics(font, ch);
+            Sprite spr = font_get_sprite(font, ch);
+            rect2 tex_rect = sprite_get_rect(spr);
+            
+            v2 size_pixels = v2_hadamard(rect2_get_size(tex_rect), 
+                                         V2((f32)spr.atlas->bmp.width,
+                                            (f32)spr.atlas->bmp.height));
+            
+            mat4 self_m = model_m;
+            
+            self_m.e00 *= size_pixels.x;
+            self_m.e11 *= size_pixels.y;
+            
+            self_m.e30 -= spr.origin.x/PIXELS_PER_METER;
+            self_m.e31 -= spr.origin.y/PIXELS_PER_METER;
+            
+            Quad_Instance inst = {0};
+            inst.model = mat4_transpose(self_m);
+            inst.tex_offset = tex_rect.min;
+            inst.tex_scale = rect2_get_size(tex_rect);
+            inst.color = item->state.color;
+            
+            sb_push(instances, inst);
+            
+            f32 advance_meters = metrics.advance/PIXELS_PER_METER;
+            model_m.e30 += advance_meters;
+          }
+          atlas = &font->atlas;
+        } break;
+        
         default: assert(false);
       }
     }
     DEBUG_SECTION_END(_push_instances);
     
-    mat4 view_matrix = camera_get_matrix(group->camera, group->screen_size);
-    quad_renderer_draw(renderer, &atlas->bmp, view_matrix, 
-                       instances, instance_count);
+    mat4 view_matrix = camera_get_view_matrix(group->camera);
+    mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
+    
+    quad_renderer_draw(renderer, &atlas->bmp, view_matrix, projection_matrix, 
+                       instances, sb_count(instances));
   }
   
   DEBUG_FUNCTION_END();

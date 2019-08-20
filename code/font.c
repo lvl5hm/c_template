@@ -174,12 +174,6 @@ Font load_ttf(Arena *temp, Arena *perm, String file_name) {
     i32 x0, y0, x1, y1;
     stbtt_GetCodepointBitmapBox(&font, ch, scale, scale, &x0,&y0,&x1,&y1);
     
-#if 0    
-    if (ch == '.') {
-      int fpp = 23;
-    }
-#endif
-    
     u32 *row = (u32 *)bitmap.data + (height-1)*width;
     for (i32 y = 0; y < height; y++) {
       u32 *dst = row;
@@ -196,7 +190,7 @@ Font load_ttf(Arena *temp, Arena *perm, String file_name) {
     }
     
     Codepoint_Metrics metrics;
-    metrics.origin = V2(-(f32)x0/width, (f32)y1/height);
+    metrics.origin = V2(-(f32)x0, (f32)y1);
     
     i32 advance, _lsb;
     stbtt_GetCodepointHMetrics(&font, ch, &advance, &_lsb);

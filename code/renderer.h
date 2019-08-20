@@ -44,6 +44,7 @@ typedef enum {
   Render_Type_NONE,
   Render_Type_Rect,
   Render_Type_Sprite,
+  Render_Type_Text,
 } Render_Type;
 
 typedef struct {
@@ -55,6 +56,10 @@ typedef struct {
 } Render_Sprite;
 
 typedef struct {
+  String text;
+} Render_Text;
+
+typedef struct {
   mat4 matrix;
   v4 color;
   Font *font;
@@ -64,13 +69,20 @@ typedef struct {
   union {
     Render_Rect Rect;
     Render_Sprite Sprite;
+    Render_Text Text;
   };
   Render_Type type;
   Render_State state;
 } Render_Item;
 
 typedef struct {
-  Transform t;
+  f32 far;
+  f32 near;
+  f32 width;
+  f32 height;
+  
+  f32 angle;
+  v3 p;
 } Camera;
 
 typedef struct {
