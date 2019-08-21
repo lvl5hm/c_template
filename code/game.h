@@ -96,11 +96,18 @@ typedef enum {
 } Rune_Type;
 
 typedef struct {
+  f32 v;
+  f32 max;
+  f32 regen;
+} Resource;
+
+typedef struct {
   Skill_Type type;
   f32 damage;
   
   Rune_Type runes[3];
   f32 mp_cost;
+  Resource cooldown;
 } Skill;
 
 typedef struct {
@@ -108,19 +115,45 @@ typedef struct {
   f32 time;
 } Lifetime;
 
-typedef struct {
-  f32 v;
-  f32 max;
-  f32 regen;
-} Resource;
+typedef enum {
+  Ai_State_NONE,
+  Ai_State_IDLE,
+  Ai_State_WALK_TO,
+  Ai_State_ATTACK,
+  Ai_State_TELE,
+  Ai_State_ALERT,
+} Ai_State;
+
+char *Ai_State_to_string[] = {
+  [Ai_State_ALERT] = "alert",
+  [Ai_State_NONE] = "none",
+  [Ai_State_IDLE] = "idle",
+  [Ai_State_WALK_TO] = "walt_to",
+  [Ai_State_ATTACK] = "attack",
+  [Ai_State_TELE] = "tele",
+};
+
+typedef enum {
+  Controller_Type_NONE,
+  Controller_Type_PLAYER,
+  Controller_Type_AI_SHOOTER,
+  Controller_Type_AI_ZOMBIE,
+} Controller_Type;
+
+typedef enum {
+  Entity_Flag_NONE = 0,
+  Entity_Flag_PLAYER = 1 << 0,
+  Entity_Flag_PROJECTILE = 1 << 1,
+} Entity_Flag;
 
 typedef struct {
-  i32 index;
   b32 is_active;
+  i32 id;
   
   Transform t;
   v3 d_p;
   f32 d_angle;
+  f32 speed;
   
   Collider collider;
   Skill skills[4];
@@ -130,9 +163,15 @@ typedef struct {
   
   f32 contact_damage;
   
-  v2 target_p;
-  b32 player_controller;
+  Controller_Type controller_type;
+  Ai_State ai_state;
+  f32 ai_progress;
+  i32 aggro_entity_id;
+  v3 target_p;
+  v3 target_move_p;
+  
   f32 friction;
+  u64 flags;
   
   Lifetime lifetime;
 } Entity;
@@ -170,6 +209,7 @@ typedef struct {
 #define MAX_ENTITY_COUNT 10000
 
 typedef struct {
+  i32 unique_entity_id;
   Tile_Map tile_map;
   
   Input empty_input;

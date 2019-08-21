@@ -148,32 +148,48 @@ Entity *add_entity(State *state) {
   
   e->is_active = true;
   e->t = transform_default();
-  e->index = index;
+  e->id = state->unique_entity_id++;
   
   return e;
+}
+
+void flag_set(u64 *flags, u64 flag) {
+  *flags |= flag;
+}
+
+void flag_remove(u64 *flags, u64 flag) {
+  *flags &= ~flag;
+}
+
+b32 flag_is_set(u64 flags, u64 flag) {
+  b32 result = (b32)(flags & flag);
+  return result;
 }
 
 Entity *add_entity_player(State *state) {
   Entity *e = add_entity(state);
   
   e->hp.v = 10;
-  e->mp.v = 10;
   e->hp.max = 10;
-  e->mp.max = 10;
   e->hp.regen = 0;
+  
+  e->mp.v = 10;
+  e->mp.max = 10;
   e->mp.regen = 1.0f;
   
   e->collider.box.rect = rect2_center_size(V2(0, 0), V2(1, 1));
   e->collider.type = Collider_Type_BOX;
-  e->player_controller = true;
+  e->controller_type = Controller_Type_PLAYER;
   e->friction = 0.92f;
-  e->t.p.x = 3;
+  e->speed = 1.0f;
+  flag_set(&e->flags, Entity_Flag_PLAYER);
   
   e->skills[0] = (Skill){
     .type = Skill_Type_FIREBALL,
     .damage = 1,
     .mp_cost = 2.0f,
   };
+  
   
   e->skills[1] = (Skill){
     .type = Skill_Type_BLINK,
@@ -183,18 +199,30 @@ Entity *add_entity_player(State *state) {
   return e;
 }
 
-Entity *add_entity_box(State *state) {
+Entity *add_entity_shooter(State *state) {
   Entity *e = add_entity(state);
-  return e;
-}
-
-Entity *add_entity_enemy(State *state) {
-  Entity *e = add_entity(state);
-  e->t.scale.xy = V2(3.0f, 0.5f);
   
-  e->collider.circle.r = 0.5f;
-  e->collider.circle.origin = V2(0, 0);
-  e->collider.type = Collider_Type_CIRCLE;
+  e->hp.v = 2;
+  e->hp.max = 2;
+  e->hp.regen = 0;
+  
+  e->mp.v = 0;
+  e->mp.max = 0;
+  e->mp.regen = 0;
+  
+  e->speed = 0.5f;
+  e->collider.box.rect = rect2_center_size(V2(0, 0), V2(1, 1));
+  e->collider.type = Collider_Type_BOX;
+  e->controller_type = Controller_Type_AI_SHOOTER;
+  e->friction = 0.92f;
+  e->ai_state = Ai_State_IDLE;
+  
+  e->skills[0] = (Skill){
+    .type = Skill_Type_FIREBALL,
+    .damage = 1,
+    .mp_cost = 0,
+    .cooldown.max = 1,
+  };
   
   return e;
 }
@@ -203,10 +231,12 @@ Entity *add_entity_fireball(State *state) {
   Entity *e = add_entity(state);
   
   
-  e->collider.circle.r = 0.3f;
-  e->collider.type = Collider_Type_CIRCLE;
+  e->collider.box.rect = rect2_center_size(V2(0, 0), V2(1, 1));
+  e->collider.type = Collider_Type_BOX;
   e->lifetime.active = true;
   e->lifetime.time = 3.0f;
+  e->friction = 1;
+  flag_set(&e->flags, Entity_Flag_PROJECTILE);
   
   return e;
 }
@@ -359,6 +389,7 @@ Sprite make_sprite(Texture_Atlas *atlas, i32 index, v2 origin) {
 }
 
 
+#if 0
 b32 collide_aabb_aabb(rect2 a, rect2 b) {
   b32 result = !(a.max.x < b.min.x ||
                  a.max.y < b.min.y ||
@@ -366,6 +397,7 @@ b32 collide_aabb_aabb(rect2 a, rect2 b) {
                  a.min.y > b.max.y);
   return result;
 }
+#endif
 
 v2 v2_transform(v2 v, Transform t) {
   mat4 matrix4 = transform_apply(mat4_identity(), t);
@@ -544,11 +576,11 @@ b32 gjk_collide(Collider a_coll, Transform a_t,
   return result;
 }
 
-String tsprintf(Arena *arena, char *fmt, ...) {
+String tsprintf(char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
   
-  char *buffer = arena_push_array(arena, char, 256);
+  char *buffer = arena_push_array(scratch, char, 256);
   vsprintf_s(buffer, 256, fmt, args);
   String result = make_string(buffer, c_string_length(buffer));
   
@@ -583,23 +615,26 @@ b32 skill_use(State *state, Entity *e, Skill *skill) {
     }
   }
   
-  if (e->mp.v >= cost) {
-    e->mp.v -= cost;
-    result = true;
-    switch (skill->type) {
-      case Skill_Type_BLINK: {
-        e->t.p.xy = e->target_p;
-      } break;
-      
-      case Skill_Type_FIREBALL: {
-        Entity *ball = add_entity_fireball(state);
-        ball->t.p = e->t.p;
+  if (skill->cooldown.v <= 0) {
+    if (e->mp.v >= cost) {
+      skill->cooldown.v = skill->cooldown.max;
+      e->mp.v -= cost;
+      result = true;
+      switch (skill->type) {
+        case Skill_Type_BLINK: {
+          e->t.p = e->target_p;
+        } break;
         
-        v2 dir = v2_sub(e->target_p, e->t.p.xy);
-        ball->t.angle = atan2_f32(dir.y, dir.x);
-        ball->d_p = v2_to_v3(v2_mul(v2_unit(dir), 5.0f), 0);
-        ball->contact_damage = damage;
-      } break;
+        case Skill_Type_FIREBALL: {
+          Entity *ball = add_entity_fireball(state);
+          ball->t.p = e->t.p;
+          
+          v2 dir = v2_sub(e->target_p.xy, e->t.p.xy);
+          ball->t.angle = atan2_f32(dir.y, dir.x);
+          ball->d_p = v2_to_v3(v2_mul(v2_unit(dir), 5.0f), 0);
+          ball->contact_damage = damage;
+        } break;
+      }
     }
   }
   
@@ -649,6 +684,95 @@ Tile *get_tile(Tile_Map *map, Tile_Position p) {
   Tile *result = chunk->tiles + p.tile_y*CHUNK_SIZE + p.tile_x;
   return result;
 }
+
+Entity *query_entity_id(State *state, i32 id) {
+  Entity *result = null;
+  for (i32 i = 1; i < state->entity_count; i++) {
+    Entity *e = get_entity(state, i);
+    if (e && e->id == id) {
+      result = e;
+    }
+  }
+  return result;
+}
+
+Entity **query_entities_flag(State *state, Entity_Flag flag) {
+  Entity **result = sb_init(scratch, Entity *, 32, true);
+  for (i32 i = 1; i < state->entity_count; i++) {
+    Entity *e = get_entity(state, i);
+    if (e && flag_is_set(e->flags, flag)) {
+      sb_push(result, e);
+    }
+  }
+  
+  return result;
+}
+
+Entity *query_closest_entity_flag(State *state, Entity_Flag flag, v3 p) {
+  Entity **list = query_entities_flag(state, flag);
+  
+  Entity *result = 0;
+  f32 min_dist = INFINITY;
+  for (u32 i = 0; i < sb_count(list); i++) {
+    Entity *e = list[i];
+    f32 dist = v3_length_sqr(v3_sub(e->t.p, p));
+    if (dist < min_dist) {
+      result = e;
+      min_dist = dist;
+    }
+  }
+  
+  return result;
+}
+
+typedef struct {
+  v2 proj;
+  b32 success;
+} Collision;
+
+Collision collide_aabb_aabb(rect2 a, rect2 b) {
+  Collision result = {0};
+  
+  if (a.min.x >= b.max.x ||
+      a.max.x <= b.min.x ||
+      a.min.y >= b.max.y ||
+      a.max.y <= b.min.y) {
+    // NOTE(lvl5): no collision
+    return result;
+  }
+  
+  f32 EPS = 0.0001f;
+  
+  v2 a_center = rect2_get_center(a);
+  v2 b_center = rect2_get_center(b);
+  
+  f32 x_pen;
+  
+  if (a_center.x < b_center.x) {
+    x_pen = b.min.x - a.max.x;
+  } else {
+    x_pen = b.max.x - a.min.x;
+  }
+  
+  f32 y_pen;
+  if (a_center.y < b_center.y) {
+    y_pen = b.min.y - a.max.y;
+  } else {
+    y_pen = b.max.y - a.min.y;
+  }
+  
+  
+  if (abs_f32(x_pen) > abs_f32(y_pen)) {
+    result.proj = V2(0, y_pen);
+  } else {
+    result.proj = V2(x_pen, 0);
+  }
+  
+  result.success = true;
+  return result;
+}
+
+
 
 extern GAME_UPDATE(game_update) {
   State *state = (State *)memory.perm;
@@ -725,10 +849,22 @@ extern GAME_UPDATE(game_update) {
     
     quad_renderer_init(&state->renderer, state);
     add_entity(state); // filler entity
-    add_entity_player(state);
+    Entity *player = add_entity_player(state);
+    player->t.p = V3(0, 0, 0);
+    
+    Entity *shooter = add_entity_shooter(state);
+    shooter->t.p = V3(4, 4, 0);
     
     
     char *ascii_chunks[] = {
+      "________"
+        "________"
+        "________"
+        "________"
+        "________"
+        "________"
+        "________" 
+        "________",
       "########"
         "#_____##"
         "#_______"
@@ -752,7 +888,8 @@ extern GAME_UPDATE(game_update) {
     
     for (i32 chunk_y = -3; chunk_y < 3; chunk_y++) {
       for (i32 chunk_x = -3; chunk_x < 3; chunk_x++) {
-        i32 random_index = random_range_i32(&state->rand, 0, array_count(ascii_chunks) - 1);
+        i32 random_index = 0;
+        // random_range_i32(&state->rand, 0, array_count(ascii_chunks) - 1);
         char *ascii_chunk = ascii_chunks[random_index];
         
         Tile_Chunk chunk;
@@ -854,104 +991,167 @@ extern GAME_UPDATE(game_update) {
     if (!e) continue;
     
     e->t.p = v3_add(e->t.p, v3_mul(e->d_p, dt));
+    v2 move_dir = {0};
     
-    if (e->player_controller) {
-      v2 move_dir = v2_i(input->move_right.is_down - input->move_left.is_down,
-                         input->move_up.is_down - input->move_down.is_down);
-      f32 move_dir_len = v2_length(move_dir);
-      if (move_dir_len) {
-        move_dir = v2_div(move_dir, move_dir_len);
-      }
-      
-      v2 d_d_p = v2_mul(move_dir, 1.0f);
-      e->d_p = v3_add(e->d_p, v2_to_v3(d_d_p, 0));
-      e->target_p = mouse_world;
-      e->d_p = v3_mul(e->d_p, e->friction);
-      
-      for (i32 skill_index = 0; 
-           skill_index < array_count(e->skills);
-           skill_index++) {
-        Skill *skill = e->skills + skill_index;
-        Button btn = input->skills[skill_index];
-        if (btn.went_up) {
-          b32 use_success = skill_use(state, e, skill);
-        }
-      }
-      
-      state->camera.p = e->t.p;
-      
-      rect2 bbox = get_bbox(e);
-      v2 corners[] = {
-        bbox.min,
-        V2(bbox.min.x, bbox.max.y),
-        bbox.max,
-        V2(bbox.max.x, bbox.min.y),
-      };
-#define EPS 0.001f
-#if 0
-      corners[0].x += EPS;
-      corners[0].y += EPS;
-      corners[1].x -= EPS;
-      corners[1].y -= EPS;
-      corners[2].x += EPS;
-      corners[2].y -= EPS;
-      corners[3].x -= EPS;
-      corners[3].y += EPS;
-#endif
-      
-      for (i32 corner_index = 0;
-           corner_index < 4;
-           corner_index++) {
-        v2 corner = corners[corner_index];
+    for (i32 skill_index = 0; 
+         skill_index < array_count(e->skills);
+         skill_index++) {
+      Skill *skill = e->skills + skill_index;
+      skill->cooldown.v -= dt;
+    }
+    
+    
+    switch (e->controller_type) {
+      case Controller_Type_PLAYER: {
+        e->target_p = v2_to_v3(mouse_world, 0);
+        move_dir = v2_i(input->move_right.is_down - input->move_left.is_down,
+                        input->move_up.is_down - input->move_down.is_down);
         
-        Tile_Position tile_p = get_tile_position(corner);
-        Tile *tile = get_tile(&state->tile_map, tile_p);
-        if (tile->terrain == Terrain_Kind_WALL) {
-          v2 world_p = V2((f32)(tile_p.chunk_x*CHUNK_SIZE + tile_p.tile_x)*TILE_SIZE_IN_METERS,
-                          (f32)(tile_p.chunk_y*CHUNK_SIZE + tile_p.tile_y)*TILE_SIZE_IN_METERS);
-          
-          Transform t = transform_default();
-          t.p = v2_to_v3(world_p, 0);
-          
-          render_save(group);
-          render_color(group, V4(1, 0, 0, 0.5f));
-          
-          rect2 wall_bbox = rect2_center_size(world_p, V2(1, 1));
-          push_rect(group, wall_bbox);
-          
-          render_restore(group);
-          
-          b32 bias_x = corner_index >= 2;
-          b32 bias_y = corner_index == 1 || corner_index == 2;
-          
-          f32 pen_x = bias_x 
-            ? bbox.max.x - wall_bbox.min.x 
-            : wall_bbox.max.x - bbox.min.x;
-          
-          f32 pen_y = bias_y
-            ? bbox.max.y - wall_bbox.min.y
-            : wall_bbox.max.y - bbox.min.y;
-          
-          if (pen_x > pen_y && pen_y > EPS) {
-            e->t.p.y += bias_y ? -pen_y : pen_y;
-            e->d_p.y = 0;
-          } else if (pen_x < pen_y && pen_x > EPS) {
-            e->t.p.x += bias_x ? -pen_x : pen_x;
-            e->d_p.x = 0;
+        
+        for (i32 skill_index = 0; 
+             skill_index < array_count(e->skills);
+             skill_index++) {
+          Skill *skill = e->skills + skill_index;
+          Button btn = input->skills[skill_index];
+          if (btn.went_up) {
+            b32 use_success = skill_use(state, e, skill);
           }
-          
-          bbox = get_bbox(e);
-          
-#if 0
-          render_color(group, V4(0, 0, 0, 1));
-          char *buf = arena_push_array(scratch, char, 256);
-          sprintf_s(buf, 256, "p: (%0.5f, %0.2f)", e->t.p.x, e->t.p.y);
-          push_text(group, from_c_string(buf));
-#endif
-          // TODO(lvl5): do the collision properly
         }
         
+        state->camera.p = e->t.p;
+      } break;
+      
+      case Controller_Type_AI_SHOOTER: {
+        switch (e->ai_state) {
+          case Ai_State_IDLE: {
+            f32 move_radius = 5.0f;
+            e->target_move_p = V3(random_range(&state->rand, -move_radius, move_radius),
+                                  random_range(&state->rand, -move_radius, move_radius),
+                                  0);
+            e->target_move_p = v3_add(e->t.p, e->target_move_p);
+            
+            if (e->ai_progress < 1) {
+              e->ai_progress += 0.01f;
+            } else {
+              e->ai_progress = 0;
+              e->ai_state = Ai_State_WALK_TO;
+            }
+          } break;
+          
+          case Ai_State_WALK_TO: {
+            Entity *target = query_closest_entity_flag(state, Entity_Flag_PLAYER, e->t.p);
+            if (target && v3_length(v3_sub(target->t.p, e->t.p)) < 5) {
+              e->ai_state = Ai_State_ALERT;
+              e->aggro_entity_id = target->id;
+              break;
+            }
+            
+            render_save(group);
+            render_color(group, V4(1, 0, 0, 1));
+            
+            push_rect(group, rect2_center_size(e->target_move_p.xy, V2(0.1f, 0.1f)));
+            render_restore(group);
+            
+            if (v3_length_sqr(v3_sub(e->t.p, e->target_move_p)) < 1.0f) {
+              e->ai_state = Ai_State_IDLE;
+            } else {
+              move_dir = v2_sub(e->target_move_p.xy, e->t.p.xy);
+            }
+          } break;
+          
+          case Ai_State_ALERT: {
+            Entity *target = query_entity_id(state, e->aggro_entity_id);
+            if (target) {
+              if (v3_length(v3_sub(target->t.p, e->t.p)) > 8) {
+                e->aggro_entity_id = 0;
+                e->ai_state = Ai_State_IDLE;
+                break;
+              }
+              
+              if (e->skills[0].cooldown.v <= 0) {
+                e->ai_state = Ai_State_TELE;
+                break;
+              }
+            }
+          } break;
+          
+          case Ai_State_TELE: {
+            if (e->ai_progress < 1) {
+              e->ai_progress += 0.06f;
+              Entity *target = query_entity_id(state, e->aggro_entity_id);
+              if (target) {
+                e->target_p = target->t.p;
+              }
+            } else {
+              e->ai_progress = 0;
+              e->ai_state = Ai_State_ATTACK;
+            }
+          } break;
+          
+          case Ai_State_ATTACK: {
+            Entity *target = query_entity_id(state, e->aggro_entity_id);
+            if (target) {
+              e->target_p = target->t.p;
+              skill_use(state, e, e->skills + 0);
+              e->ai_state = Ai_State_ALERT;
+            }
+          } break;
+          
+          default: assert(false);
+        }
+      } break;
+    } 
+    
+    
+    f32 move_dir_len = v2_length(move_dir);
+    if (move_dir_len) {
+      move_dir = v2_div(move_dir, move_dir_len);
+    }
+    v2 d_d_p = v2_mul(move_dir, e->speed);
+    e->d_p = v3_add(e->d_p, v2_to_v3(d_d_p, 0));
+    e->d_p = v3_mul(e->d_p, e->friction);
+    
+    
+    rect2 bbox = get_bbox(e);
+    v2 corners[] = {
+      bbox.min,
+      V2(bbox.min.x, bbox.max.y),
+      bbox.max,
+      V2(bbox.max.x, bbox.min.y),
+    };
+    
+    for (i32 corner_index = 0;
+         corner_index < 4;
+         corner_index++) {
+      v2 corner = corners[corner_index];
+      
+      Tile_Position tile_p = get_tile_position(corner);
+      Tile *tile = get_tile(&state->tile_map, tile_p);
+      if (tile->terrain == Terrain_Kind_WALL) {
+        v2 world_p = V2((f32)(tile_p.chunk_x*CHUNK_SIZE + tile_p.tile_x)*TILE_SIZE_IN_METERS,
+                        (f32)(tile_p.chunk_y*CHUNK_SIZE + tile_p.tile_y)*TILE_SIZE_IN_METERS);
+        
+        Transform t = transform_default();
+        t.p = v2_to_v3(world_p, 0);
+        
+        render_save(group); 
+        render_color(group, V4(1, 0, 0, 0.5f));
+        
+        rect2 wall_bbox = rect2_center_size(world_p, V2(1, 1));
+        
+        render_restore(group);
+        Collision col = collide_aabb_aabb(bbox, wall_bbox);
+        if (col.success) {
+          e->t.p = v3_add(e->t.p, v2_to_v3(col.proj, 0));
+          if (col.proj.x) {
+            e->d_p.x = 0;
+          } else {
+            e->d_p.y = 0;
+          }
+          break;
+        }
       }
+      
     }
     
     if (e->lifetime.active) {
@@ -974,18 +1174,27 @@ extern GAME_UPDATE(game_update) {
     
     
     // NOTE(lvl5): draw hp and mp
-    String hp_string = tsprintf(&state->scratch, "HP: %.02f", e->hp.v);
+    String hp_string = tsprintf("HP: %.02f", e->hp.v);
     f32 hp_string_width = text_get_size(group, hp_string);
     
-    String mp_string = tsprintf(&state->scratch, "MP: %.02f", e->mp.v);
+    String mp_string = tsprintf("MP: %.02f", e->mp.v);
     f32 mp_string_width = text_get_size(group, mp_string);
     
+    String ai_string = tsprintf("AI: %s %0.0f%%", 
+                                Ai_State_to_string[e->ai_state],
+                                e->ai_progress*100);
+    f32 ai_string_width = text_get_size(group, ai_string);
+    
     render_save(group);
-    render_translate(group, v3_add(e->t.p, V3(-hp_string_width*0.5f, 0.8f, 0)));
+    render_color(group, V4(0, 0, 0, 1));
+    render_translate(group, v3_add(e->t.p, V3(-hp_string_width*0.5f, 0.05f*PIXELS_PER_METER, 0)));
     push_text(group, hp_string);
     
-    render_translate(group, V3(0, -0.2f, 0));
+    render_translate(group, V3(0, -0.015f*PIXELS_PER_METER, 0));
     push_text(group, mp_string);
+    
+    render_translate(group, V3(0, -0.015f*PIXELS_PER_METER, 0));
+    push_text(group, ai_string);
     
     render_restore(group);
     
