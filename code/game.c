@@ -133,6 +133,11 @@ Entity *get_entity(State *state, i32 index) {
   return result;
 }
 
+Arena *entity_get_arena(Entity *e) {
+  Arena *result = (Arena *)e->misc_storage;
+  return result;
+}
+
 Entity *add_entity(State *state) {
   assert(state->entity_count < array_count(state->entities));
   
@@ -149,8 +154,19 @@ Entity *add_entity(State *state) {
   e->is_active = true;
   e->t = transform_default();
   e->id = state->unique_entity_id++;
+  e->index = index;
+  
+  Arena *arena = entity_get_arena(e);
+  arena_init(arena, e->misc_storage + sizeof(Arena), sizeof(e->misc_storage) - sizeof(Arena));
   
   return e;
+}
+
+Entity_Handle get_entity_handle(Entity *e) {
+  Entity_Handle result = {0};
+  result.id = e->id;
+  result.index = e->index;
+  return result;
 }
 
 void flag_set(u64 *flags, u64 flag) {
@@ -182,6 +198,7 @@ Entity *add_entity_player(State *state) {
   e->controller_type = Controller_Type_PLAYER;
   e->friction = 0.92f;
   e->speed = 1.0f;
+  e->team = Entity_Team_PLAYER;
   flag_set(&e->flags, Entity_Flag_PLAYER);
   flag_set(&e->flags, Entity_Flag_ACTOR);
   
@@ -218,13 +235,15 @@ Entity *add_entity_shooter(State *state) {
   e->controller_type = Controller_Type_AI_SHOOTER;
   e->friction = 0.92f;
   e->ai_state = Ai_State_IDLE;
+  e->team = Entity_Team_ENEMY;
   flag_set(&e->flags, Entity_Flag_ACTOR);
+  
   
   e->skills[0] = (Skill){
     .type = Skill_Type_FIREBALL,
     .damage = 1,
     .mp_cost = 0,
-    .cooldown.max = 0.05f,
+    .cooldown.max = 1.0f,
     .accuracy = 0.95f,
   };
   
@@ -645,6 +664,7 @@ b32 skill_use(State *state, Entity *e, Skill *skill) {
           ball->t.angle = angle;
           ball->d_p = v2_to_v3(v2_mul(v2_unit(shoot_dir), 5.0f), 0);
           ball->contact_damage = damage;
+          ball->team = e->team;
         } break;
       }
     }
@@ -708,6 +728,16 @@ Entity *query_entity_id(State *state, i32 id) {
   return result;
 }
 
+Entity *query_entity_handle(State *state, Entity_Handle handle) {
+  Entity *result = 0;
+  Entity *test = get_entity(state, handle.index);
+  if (test && test->id == handle.id) {
+    result = test;
+  }
+  
+  return result;
+}
+
 Entity **query_entities_flag(State *state, Entity_Flag flag) {
   Entity **result = sb_init(scratch, Entity *, 32, true);
   for (i32 i = 1; i < state->entity_count; i++) {
@@ -736,6 +766,7 @@ Entity *query_closest_entity_flag(State *state, Entity_Flag flag, v3 p) {
   
   return result;
 }
+
 
 typedef struct {
   v2 proj;
@@ -784,6 +815,32 @@ Collision collide_aabb_aabb(rect2 a, rect2 b) {
   return result;
 }
 
+
+Entity **query_entities_collide(State *state, Entity *a_ent) {
+  Entity **result = sb_init(scratch, Entity *, 32, true);
+  for (i32 i = 1; i < state->entity_count; i++) {
+    Entity *e = get_entity(state, i);
+    if (e) {
+      rect2 a = get_bbox(a_ent);
+      rect2 b = get_bbox(e);
+      Collision collision = collide_aabb_aabb(a, b);
+      if (collision.success) {
+        sb_push(result, e);
+      }
+    }
+  }
+  
+  return result;
+}
+
+
+void entity_take_damage(State *state, Entity *e, f32 damage) {
+  // TODO(lvl5): damage types, resistances, etc
+  e->hp.v -= damage;
+  if (e->hp.v <= 0) {
+    remove_entity(state, e->index);
+  }
+}
 
 
 extern GAME_UPDATE(game_update) {
@@ -1043,7 +1100,7 @@ extern GAME_UPDATE(game_update) {
             e->target_move_p = v3_add(e->t.p, e->target_move_p);
             
             if (e->ai_progress < 1) {
-              e->ai_progress += 0.01f;
+              e->ai_progress += 0.02f;
             } else {
               e->ai_progress = 0;
               e->ai_state = Ai_State_WALK_TO;
@@ -1054,7 +1111,7 @@ extern GAME_UPDATE(game_update) {
             Entity *target = query_closest_entity_flag(state, Entity_Flag_PLAYER, e->t.p);
             if (target && v3_length(v3_sub(target->t.p, e->t.p)) < 5) {
               e->ai_state = Ai_State_ALERT;
-              e->aggro_entity_id = target->id;
+              e->aggro_handle = get_entity_handle(target);
               break;
             }
             
@@ -1072,10 +1129,10 @@ extern GAME_UPDATE(game_update) {
           } break;
           
           case Ai_State_ALERT: {
-            Entity *target = query_entity_id(state, e->aggro_entity_id);
+            Entity *target = query_entity_handle(state, e->aggro_handle);
             if (target) {
               if (v3_length(v3_sub(target->t.p, e->t.p)) > 8) {
-                e->aggro_entity_id = 0;
+                e->aggro_handle = NULL_ENTITY_HANDLE;
                 e->ai_state = Ai_State_IDLE;
                 break;
               }
@@ -1089,8 +1146,8 @@ extern GAME_UPDATE(game_update) {
           
           case Ai_State_TELE: {
             if (e->ai_progress < 1) {
-              e->ai_progress += 0.1f;
-              Entity *target = query_entity_id(state, e->aggro_entity_id);
+              e->ai_progress += 0.06f;
+              Entity *target = query_entity_handle(state, e->aggro_handle);
               if (target) {
                 e->target_p = target->t.p;
               }
@@ -1101,7 +1158,7 @@ extern GAME_UPDATE(game_update) {
           } break;
           
           case Ai_State_ATTACK: {
-            Entity *target = query_entity_id(state, e->aggro_entity_id);
+            Entity *target = query_entity_handle(state, e->aggro_handle);
             if (target) {
               e->target_p = target->t.p;
               skill_use(state, e, e->skills + 0);
@@ -1123,8 +1180,24 @@ extern GAME_UPDATE(game_update) {
     e->d_p = v3_add(e->d_p, v2_to_v3(d_d_p, 0));
     e->d_p = v3_mul(e->d_p, e->friction);
     
+    if (e->contact_damage) {
+      Entity **collide_list = query_entities_collide(state, e);
+      for (u32 i = 0; i < sb_count(collide_list); i++) {
+        Entity *other = collide_list[i];
+        if (other->team != e->team &&
+            !flag_is_set(other->flags, Entity_Flag_PROJECTILE)) {
+          entity_take_damage(state, other, e->contact_damage);
+          if (flag_is_set(e->flags, Entity_Flag_PROJECTILE)) {
+            remove_entity(state, e->index);
+          }
+        }
+      }
+    }
+    
     
     rect2 bbox = get_bbox(e);
+    
+    // TODO(lvl5): this wont work with very big entities vs small walls
     v2 corners[] = {
       bbox.min,
       V2(bbox.min.x, bbox.max.y),

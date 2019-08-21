@@ -130,7 +130,7 @@ char *Ai_State_to_string[] = {
   [Ai_State_ALERT] = "alert",
   [Ai_State_NONE] = "none",
   [Ai_State_IDLE] = "idle",
-  [Ai_State_WALK_TO] = "walt_to",
+  [Ai_State_WALK_TO] = "walk_to",
   [Ai_State_ATTACK] = "attack",
   [Ai_State_TELE] = "tele",
 };
@@ -149,9 +149,23 @@ typedef enum {
   Entity_Flag_ACTOR = 1 << 2,
 } Entity_Flag;
 
+typedef enum {
+  Entity_Team_NONE,
+  Entity_Team_PLAYER,
+  Entity_Team_ENEMY,
+} Entity_Team;
+
+typedef struct {
+  i32 id;
+  i32 index;
+} Entity_Handle;
+
+#define NULL_ENTITY_HANDLE (Entity_Handle){.id = 0, .index = 0}
+
 typedef struct {
   b32 is_active;
   i32 id;
+  i32 index;
   
   Transform t;
   v3 d_p;
@@ -169,14 +183,17 @@ typedef struct {
   Controller_Type controller_type;
   Ai_State ai_state;
   f32 ai_progress;
-  i32 aggro_entity_id;
+  Entity_Handle aggro_handle;
   v3 target_p;
   v3 target_move_p;
   
   f32 friction;
   u64 flags;
+  Entity_Team team;
   
   Lifetime lifetime;
+  
+  byte misc_storage[kilobytes(10)]; // this should be separate?
 } Entity;
 
 typedef enum {
