@@ -183,11 +183,13 @@ Entity *add_entity_player(State *state) {
   e->friction = 0.92f;
   e->speed = 1.0f;
   flag_set(&e->flags, Entity_Flag_PLAYER);
+  flag_set(&e->flags, Entity_Flag_ACTOR);
   
   e->skills[0] = (Skill){
     .type = Skill_Type_FIREBALL,
     .damage = 1,
     .mp_cost = 2.0f,
+    .accuracy = 1,
   };
   
   
@@ -216,12 +218,14 @@ Entity *add_entity_shooter(State *state) {
   e->controller_type = Controller_Type_AI_SHOOTER;
   e->friction = 0.92f;
   e->ai_state = Ai_State_IDLE;
+  flag_set(&e->flags, Entity_Flag_ACTOR);
   
   e->skills[0] = (Skill){
     .type = Skill_Type_FIREBALL,
     .damage = 1,
     .mp_cost = 0,
-    .cooldown.max = 1,
+    .cooldown.max = 0.05f,
+    .accuracy = 0.95f,
   };
   
   return e;
@@ -630,8 +634,16 @@ b32 skill_use(State *state, Entity *e, Skill *skill) {
           ball->t.p = e->t.p;
           
           v2 dir = v2_sub(e->target_p.xy, e->t.p.xy);
-          ball->t.angle = atan2_f32(dir.y, dir.x);
-          ball->d_p = v2_to_v3(v2_mul(v2_unit(dir), 5.0f), 0);
+          
+          f32 target_angle = atan2_f32(dir.y, dir.x);
+          f32 spread = (1 - skill->accuracy)*PI;
+          f32 random_angle = random_range(&state->rand, -spread, spread);
+          f32 angle = target_angle + random_angle;
+          ball->t.angle = angle;
+          v2 shoot_dir = v2_rotate(v2_right(), angle);
+          
+          ball->t.angle = angle;
+          ball->d_p = v2_to_v3(v2_mul(v2_unit(shoot_dir), 5.0f), 0);
           ball->contact_damage = damage;
         } break;
       }
@@ -1049,7 +1061,7 @@ extern GAME_UPDATE(game_update) {
             render_save(group);
             render_color(group, V4(1, 0, 0, 1));
             
-            push_rect(group, rect2_center_size(e->target_move_p.xy, V2(0.1f, 0.1f)));
+            push_rect(group, rect2_center_size(e->target_move_p.xy, V2(0.4f, 0.4f)));
             render_restore(group);
             
             if (v3_length_sqr(v3_sub(e->t.p, e->target_move_p)) < 1.0f) {
@@ -1077,7 +1089,7 @@ extern GAME_UPDATE(game_update) {
           
           case Ai_State_TELE: {
             if (e->ai_progress < 1) {
-              e->ai_progress += 0.06f;
+              e->ai_progress += 0.1f;
               Entity *target = query_entity_id(state, e->aggro_entity_id);
               if (target) {
                 e->target_p = target->t.p;
@@ -1173,30 +1185,32 @@ extern GAME_UPDATE(game_update) {
     }
     
     
-    // NOTE(lvl5): draw hp and mp
-    String hp_string = tsprintf("HP: %.02f", e->hp.v);
-    f32 hp_string_width = text_get_size(group, hp_string);
-    
-    String mp_string = tsprintf("MP: %.02f", e->mp.v);
-    f32 mp_string_width = text_get_size(group, mp_string);
-    
-    String ai_string = tsprintf("AI: %s %0.0f%%", 
-                                Ai_State_to_string[e->ai_state],
-                                e->ai_progress*100);
-    f32 ai_string_width = text_get_size(group, ai_string);
-    
-    render_save(group);
-    render_color(group, V4(0, 0, 0, 1));
-    render_translate(group, v3_add(e->t.p, V3(-hp_string_width*0.5f, 0.05f*PIXELS_PER_METER, 0)));
-    push_text(group, hp_string);
-    
-    render_translate(group, V3(0, -0.015f*PIXELS_PER_METER, 0));
-    push_text(group, mp_string);
-    
-    render_translate(group, V3(0, -0.015f*PIXELS_PER_METER, 0));
-    push_text(group, ai_string);
-    
-    render_restore(group);
+    if (flag_is_set(e->flags, Entity_Flag_ACTOR)) {
+      // NOTE(lvl5): draw hp and mp
+      String hp_string = tsprintf("HP: %.02f", e->hp.v);
+      f32 hp_string_width = text_get_size(group, hp_string);
+      
+      String mp_string = tsprintf("MP: %.02f", e->mp.v);
+      f32 mp_string_width = text_get_size(group, mp_string);
+      
+      String ai_string = tsprintf("AI: %s %0.0f%%", 
+                                  Ai_State_to_string[e->ai_state],
+                                  e->ai_progress*100);
+      f32 ai_string_width = text_get_size(group, ai_string);
+      
+      render_save(group);
+      render_color(group, V4(0, 0, 0, 1));
+      render_translate(group, v3_add(e->t.p, V3(-hp_string_width*0.5f, 0.05f*PIXELS_PER_METER, 0)));
+      push_text(group, hp_string);
+      
+      render_translate(group, V3(0, -0.015f*PIXELS_PER_METER, 0));
+      push_text(group, mp_string);
+      
+      render_translate(group, V3(0, -0.015f*PIXELS_PER_METER, 0));
+      push_text(group, ai_string);
+      
+      render_restore(group);
+    }
     
     render_save(group);
     render_transform(group, e->t);

@@ -104,8 +104,10 @@ typedef struct {
 typedef struct {
   Skill_Type type;
   f32 damage;
+  f32 accuracy;
   
   Rune_Type runes[3];
+  
   f32 mp_cost;
   Resource cooldown;
 } Skill;
@@ -144,6 +146,7 @@ typedef enum {
   Entity_Flag_NONE = 0,
   Entity_Flag_PLAYER = 1 << 0,
   Entity_Flag_PROJECTILE = 1 << 1,
+  Entity_Flag_ACTOR = 1 << 2,
 } Entity_Flag;
 
 typedef struct {
