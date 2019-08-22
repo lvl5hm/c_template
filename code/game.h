@@ -19,6 +19,18 @@ typedef struct {
   i32 frame_count;
 } Animation;
 
+typedef struct {
+  Animation *animations;
+  i32 animation_count;
+} Animation_Pack;
+
+typedef struct {
+  f32 *weights;
+  f32 *positions;
+} Animation_Instance;
+
+
+
 typedef enum {
   Robot_Animation_IDLE,
   Robot_Animation_WALK,
@@ -36,18 +48,8 @@ typedef enum {
   Robot_Part_COUNT,
 } Robot_Part;
 
-typedef struct {
-  Animation *animations;
-  i32 animation_count;
-} Animation_Pack;
-
-typedef struct {
-  f32 *weights;
-  f32 *positions;
-} Animation_Instance;
-
 // TODO(lvl5): should every entity part be an entity?
-// every entity has a collider, when it animates, the collider moves with it
+// every entity part has a collider, when it animates, the collider moves with it
 
 
 typedef struct {
@@ -161,6 +163,24 @@ typedef struct {
 } Entity_Handle;
 
 #define NULL_ENTITY_HANDLE (Entity_Handle){.id = 0, .index = 0}
+#define NULL_SPRITE (Sprite){0}
+
+typedef struct Entity_Part Entity_Part;
+struct Entity_Part {
+  Sprite sprite;
+  Collider collider;
+  Transform t;
+  
+  Entity_Part *children;
+  i32 child_count;
+};
+
+#define MISC_ENTITY_STORAGE_SIZE kilobytes(40)
+
+typedef struct {
+  byte data[MISC_ENTITY_STORAGE_SIZE];
+  Arena arena;
+} Misc_Entity_Storage;
 
 typedef struct {
   b32 is_active;
@@ -171,6 +191,10 @@ typedef struct {
   v3 d_p;
   f32 d_angle;
   f32 speed;
+  
+  Animation_Instance instance;
+  Entity_Part *parts;
+  i32 part_count;
   
   Collider collider;
   Skill skills[4];
@@ -193,7 +217,12 @@ typedef struct {
   
   Lifetime lifetime;
   
-  byte misc_storage[kilobytes(10)]; // this should be separate?
+  i32 misc_storage_index;
+  union {
+    struct {
+      i32 *penetrated_entity_ids;
+    } penetrating_projectile;
+  };
 } Entity;
 
 typedef enum {
@@ -247,6 +276,12 @@ typedef struct {
   
   i32 entities_free_list[MAX_ENTITY_COUNT];
   i32 entities_free_count;
+  
+  Misc_Entity_Storage misc_entity_storages[MAX_ENTITY_COUNT/10];
+  i32 misc_entity_storage_count;
+  
+  i32 misc_entity_storage_free_list[MAX_ENTITY_COUNT/10];
+  i32 misc_entity_storage_free_count;
   
   GLuint shader_basic;
   Texture_Atlas atlas;

@@ -150,6 +150,8 @@ void debug_draw_terminal(Debug_Terminal *term, Render_Group *group, Input *input
   DEBUG_FUNCTION_END();
 }
 
+#define LINE_INTERVAL 0.013f*PIXELS_PER_METER
+
 void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   DEBUG_FUNCTION_BEGIN();
   
@@ -179,7 +181,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
                 debug_arena->arena->size, debug_arena->arena->capacity);
       String str = from_c_string(buffer);
       push_text(group, str);
-      render_translate(group, V3(0, -0.2f, 0));
+      render_translate(group, V3(0, -LINE_INTERVAL, 0));
     }
     
     
@@ -197,7 +199,6 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
     push_rect(group, rect2_min_size(V2(0, 0), V2(total_width, total_heigt)));
     
 #define MAX_CYCLES 40891803
-#if 1
     {
       Debug_Frame *frame = debug_state->frames + debug_state->frame_index - 1;
       u64 begin_cycles = frame->events[0].cycles;
@@ -205,7 +206,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
       u64 duration = end_cycles - begin_cycles;
       
       render_save(group);
-      render_color(group, V4(1, 1, 1, 1));
+      render_color(group, V4(0, 0, 0, 1));
       render_translate(group, V3(total_width + 0.1f, 0.9f, 0));
       char buffer[256];
       sprintf_s(buffer, array_count(buffer), "%.2f ms", 
@@ -215,7 +216,6 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
       push_text(group, str);
       render_restore(group);
     }
-#endif
     
     f32 rect_width = total_width/array_count(debug_state->frames);
     
@@ -313,8 +313,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
       
       
       render_save(group);
-      v3 text_p = V3(0.1f, 
-                     -0.2f, 0);
+      v3 text_p = V3(0.1f, LINE_INTERVAL, 0);
       render_translate(group, text_p);
       i32 node_index = 1;
       
@@ -339,7 +338,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
         render_translate(group, indent_trans);
         
         f32 rect_width = font_get_text_width(&gui->font, str)/PIXELS_PER_METER;
-        rect2 on_screen_rect = rect2_min_size(V2(0, -0.04f), V2(rect_width, 0.2f));
+        rect2 on_screen_rect = rect2_min_size(V2(0, -0.04f), V2(rect_width, LINE_INTERVAL));
         rect2 rect = rect2_apply_matrix(on_screen_rect, 
                                         group->state.matrix);
         
@@ -350,7 +349,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
         i32 child_indices_count = node->one_past_last_child_index - 
           node->first_child_index;
         
-        render_color(group, V4(1, 1, 1, 1));
+        render_color(group, V4(0, 0, 0, 1));
         
         if (point_in_rect(mouse_p_meters, rect)) {
           any_frame_selected = true;
@@ -374,7 +373,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
         push_text(group, str);
         render_restore(group);
         
-        render_translate(group, V3(0, -0.2f, 0));
+        render_translate(group, V3(0, -LINE_INTERVAL, 0));
         
         if (node->type == Debug_View_Type_FLAT) {
           // NOTE(lvl5): merge all descendant by event id
@@ -453,7 +452,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
             
             f32 rect_width = font_get_text_width(&gui->font, str)/PIXELS_PER_METER;
             rect2 on_screen_rect = rect2_min_size(V2(0, -0.04f),
-                                                  V2(rect_width, 0.2f));
+                                                  V2(rect_width, LINE_INTERVAL));
             
             render_color(group, DEBUG_BG_COLOR);
             push_rect(group, on_screen_rect);
@@ -466,7 +465,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
             push_text(group, str);
             render_restore(group);
             
-            render_translate(group, V3(0, -0.2f, 0));
+            render_translate(group, V3(0, -LINE_INTERVAL, 0));
           }
           render_translate(group, V3(-0.1f*(node->depth+1), 0, 0));
         }

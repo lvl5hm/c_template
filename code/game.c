@@ -133,11 +133,6 @@ Entity *get_entity(State *state, i32 index) {
   return result;
 }
 
-Arena *entity_get_arena(Entity *e) {
-  Arena *result = (Arena *)e->misc_storage;
-  return result;
-}
-
 Entity *add_entity(State *state) {
   assert(state->entity_count < array_count(state->entities));
   
@@ -149,17 +144,32 @@ Entity *add_entity(State *state) {
   }
   
   Entity *e = state->entities + index;
-  zero_memory_slow(e, sizeof(Entity));
+  Entity zero_entity = {0};
+  *e = zero_entity;
   
   e->is_active = true;
   e->t = transform_default();
   e->id = state->unique_entity_id++;
   e->index = index;
   
-  Arena *arena = entity_get_arena(e);
-  arena_init(arena, e->misc_storage + sizeof(Arena), sizeof(e->misc_storage) - sizeof(Arena));
-  
   return e;
+}
+
+Entity *add_entity_with_storage(State *state) {
+  Entity *result = add_entity(state);
+  
+  i32 index;
+  if (state->misc_entity_storage_free_count) {
+    index = state->misc_entity_storage_free_list[--state->misc_entity_storage_free_count];
+  } else {
+    index = state->misc_entity_storage_count++;
+  }
+  
+  Misc_Entity_Storage *misc = state->misc_entity_storages + index;
+  arena_init(&misc->arena, misc->data, MISC_ENTITY_STORAGE_SIZE);
+  
+  result->misc_storage_index = index;
+  return result;
 }
 
 Entity_Handle get_entity_handle(Entity *e) {
@@ -250,10 +260,16 @@ Entity *add_entity_shooter(State *state) {
   return e;
 }
 
+Arena *get_misc_arena(State *state, Entity *e) {
+  assert(e->misc_storage_index);
+  Arena *result = &state->misc_entity_storages[e->misc_storage_index].arena;
+  return result;
+}
+
 Entity *add_entity_fireball(State *state) {
-  Entity *e = add_entity(state);
+  Entity *e = add_entity_with_storage(state);
   
-  
+  e->penetrating_projectile.penetrated_entity_ids = sb_init(get_misc_arena(state, e), i32, 32, true);
   e->collider.box.rect = rect2_center_size(V2(0, 0), V2(1, 1));
   e->collider.type = Collider_Type_BOX;
   e->lifetime.active = true;
@@ -266,10 +282,12 @@ Entity *add_entity_fireball(State *state) {
 
 
 
-void remove_entity(State *state, i32 index) {
-  Entity *removed = state->entities + index;
+void remove_entity(State *state, Entity *removed) {
+  if (removed->misc_storage_index) {
+    state->misc_entity_storage_free_list[state->misc_entity_storage_free_count++] = removed->misc_storage_index;
+  }
   removed->is_active = false;
-  state->entities_free_list[state->entities_free_count++] = index;
+  state->entities_free_list[state->entities_free_count++] = removed->index;
 }
 
 
@@ -330,8 +348,7 @@ Animation_Frame animation_pack_get_frame(Animation_Pack pack, Animation_Instance
   return result;
 }
 
-
-void draw_robot(State *state, Render_Group *group) {
+void draw_robot(State *state, Render_Group *group, Entity *e) {
   DEBUG_FUNCTION_BEGIN();
   
   f32 leg_x = 0.1f;
@@ -838,7 +855,7 @@ void entity_take_damage(State *state, Entity *e, f32 damage) {
   // TODO(lvl5): damage types, resistances, etc
   e->hp.v -= damage;
   if (e->hp.v <= 0) {
-    remove_entity(state, e->index);
+    remove_entity(state, e);
   }
 }
 
@@ -917,7 +934,7 @@ extern GAME_UPDATE(game_update) {
     gl.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
     quad_renderer_init(&state->renderer, state);
-    add_entity(state); // filler entity
+    add_entity_with_storage(state); // filler entity AND filler storage
     Entity *player = add_entity_player(state);
     player->t.p = V3(0, 0, 0);
     
@@ -1026,6 +1043,7 @@ extern GAME_UPDATE(game_update) {
 #endif
   
   
+  DEBUG_SECTION_BEGIN(_draw_tiles);
   for (u32 chunk_index = 0; chunk_index < sb_count(state->tile_map.chunks); chunk_index++) {
     Tile_Chunk *chunk = state->tile_map.chunks + chunk_index;
     //if (chunk->x != -1 || chunk->y != 0) continue;
@@ -1054,6 +1072,7 @@ extern GAME_UPDATE(game_update) {
       }
     }
   }
+  DEBUG_SECTION_END(_draw_tiles);
   
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
     Entity *e = get_entity(state, entity_index);
@@ -1141,6 +1160,8 @@ extern GAME_UPDATE(game_update) {
                 e->ai_state = Ai_State_TELE;
                 break;
               }
+            } else {
+              e->ai_state = Ai_State_IDLE;
             }
           } break;
           
@@ -1184,12 +1205,30 @@ extern GAME_UPDATE(game_update) {
       Entity **collide_list = query_entities_collide(state, e);
       for (u32 i = 0; i < sb_count(collide_list); i++) {
         Entity *other = collide_list[i];
+        
         if (other->team != e->team &&
             !flag_is_set(other->flags, Entity_Flag_PROJECTILE)) {
+          
+          b32 already_hit = false;
+          for (u32 pen_index = 0; pen_index < sb_count(e->penetrating_projectile.penetrated_entity_ids); pen_index++) {
+            i32 id = e->penetrating_projectile.penetrated_entity_ids[pen_index];
+            if (id == other->id) {
+              already_hit = true;
+            }
+          }
+          
+          if (already_hit) continue;
           entity_take_damage(state, other, e->contact_damage);
+          
+          if (flag_is_set(e->flags, Entity_Flag_PROJECTILE)) {
+            sb_push(e->penetrating_projectile.penetrated_entity_ids, other->id);
+          }
+          
+#if 0
           if (flag_is_set(e->flags, Entity_Flag_PROJECTILE)) {
             remove_entity(state, e->index);
           }
+#endif
         }
       }
     }
@@ -1242,7 +1281,7 @@ extern GAME_UPDATE(game_update) {
     if (e->lifetime.active) {
       e->lifetime.time -= dt;
       if (e->lifetime.time <= 0) {
-        remove_entity(state, entity_index);
+        remove_entity(state, e);
       }
     }
     
