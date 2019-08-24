@@ -209,7 +209,7 @@ Font load_ttf(Arena *temp, Arena *perm, String file_name) {
     }
     
     Codepoint_Metrics metrics;
-    metrics.origin = V2(-(f32)x0, (f32)y1);
+    metrics.origin_pixels = V2(-(f32)x0, (f32)y1);
     
     i32 advance, _lsb;
     stbtt_GetCodepointHMetrics(&font, ch, &advance, &_lsb);
@@ -244,22 +244,28 @@ Codepoint_Metrics font_get_metrics(Font *font, char ch) {
 }
 
 Sprite font_get_sprite(Font *font, char ch) {
+  assert(ch >= font->first_codepoint_index && 
+         ch < font->first_codepoint_index + font->codepoint_count);
+  
   Codepoint_Metrics metrics = font_get_metrics(font, ch);
   i32 font_index = ch - font->first_codepoint_index;
   Sprite spr;
   spr.index = font_index;
-  spr.origin = metrics.origin;
+  spr.origin = metrics.origin_pixels;
   spr.atlas = &font->atlas;
-  assert(spr.atlas->rects);
   return spr;
 }
 
-// NOTE(lvl5): width is in pixels
-f32 font_get_text_width(Font *font, String text) {
+f32 font_get_text_width_pixels(Font *font, String text) {
   f32 result = 0;
   for (u32 i = 0; i < text.count; i++) {
     Codepoint_Metrics metrics = font_get_metrics(font, text.data[i]);
     result += metrics.advance;
   }
+  return result;
+}
+
+f32 font_get_text_width_meters(Font *font, String text) {
+  f32 result = font_get_text_width_pixels(font, text)/PIXELS_PER_METER;
   return result;
 }

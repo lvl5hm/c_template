@@ -1,5 +1,4 @@
 #ifndef FONT_H
-
 #include "lvl5_types.h"
 
 
@@ -18,7 +17,7 @@ typedef struct {
 
 
 typedef struct {
-  v2 origin;
+  v2 origin_pixels;
   f32 advance;
   f32 *kerning;
 } Codepoint_Metrics;

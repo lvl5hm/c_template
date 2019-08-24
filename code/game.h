@@ -306,6 +306,28 @@ typedef struct {
 } State;
 
 
+typedef enum {
+  Asset_NONE,
+  Asset_ROBOT,
+  Asset_GRASS,
+} Asset_Id;
+
+typedef struct {
+  Arena arena;
+  
+  Sprite *sprites;
+  Sound *sounds;
+  Font *fonts;
+} Assets;
+
+typedef i32 Sprite_Id;
+typedef i32 Sound_Id;
+typedef i32 Font_Id;
+
+Sprite asset_get_sprite(Assets *assets, Sprite_Id id) {
+  Sprite result = {0};
+  return result;
+}
 
 
 #define GAME_H

@@ -73,7 +73,7 @@ void debug_add_arena(Arena *arena, String name) {
   da->arena = arena;
 }
 
-#define DEBUG_BG_COLOR V4(0, 0, 0, 0.4f)
+#define DEBUG_BG_COLOR V4(0, 0, 0, 0.7f)
 
 void debug_draw_terminal(Debug_Terminal *term, Render_Group *group, Input *input,
                          v2 screen_meters) {
@@ -150,7 +150,8 @@ void debug_draw_terminal(Debug_Terminal *term, Render_Group *group, Input *input
   DEBUG_FUNCTION_END();
 }
 
-#define LINE_INTERVAL 0.013f*PIXELS_PER_METER
+#define LINE_INTERVAL 20
+// 0.013f*PIXELS_PER_METER
 
 void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   DEBUG_FUNCTION_BEGIN();
@@ -161,16 +162,23 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   Render_Group _debug_render_group;
   Render_Group *group = &_debug_render_group;
   
-  render_group_init(&debug_state->arena, state, group, 10000, &state->camera, screen_size); 
+  Camera gui_camera = {
+    .far = 10.0f,
+    .near = 0.0f,
+    .width = screen_size.x,
+    .height = screen_size.y,
+    .p = v3_zero(),
+    .angle = 0,
+  };
+  render_group_init(&debug_state->arena, state, group, 10000, &gui_camera); 
   render_font(group, &gui->font);
   
-  v2 screen_meters = v2_div(screen_size, PIXELS_PER_METER);
-  debug_draw_terminal(&gui->terminal, group, input, screen_meters);
+  debug_draw_terminal(&gui->terminal, group, input, screen_size);
   
   if (debug_get_var_i32(Debug_Var_Name_MEMORY) != 0) {
     render_save(group);
-    render_translate(group, V3(-screen_meters.x*0.5f, 
-                               screen_meters.y*0.5f-1.2f,
+    render_translate(group, V3(-screen_size.x*0.5f, 
+                               screen_size.y*0.5f-1.2f,
                                0));
     
     for (i32 i = 0; i < gui->arena_count; i++) {
@@ -190,10 +198,10 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   }
   
   if (debug_get_var_i32(Debug_Var_Name_PERF) != 0) {
-    f32 total_width = 3.0f;
-    f32 total_heigt = 1.0f;
-    render_translate(group, V3(-screen_meters.x*0.5f, 
-                               screen_meters.y*0.5f-1.2f,
+    f32 total_width = 300;
+    f32 total_heigt = 50;
+    render_translate(group, V3(-screen_size.x*0.5f, 
+                               screen_size.y*0.5f - total_heigt,
                                0));
     render_color(group, DEBUG_BG_COLOR);
     push_rect(group, rect2_min_size(V2(0, 0), V2(total_width, total_heigt)));
@@ -206,10 +214,10 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
       u64 duration = end_cycles - begin_cycles;
       
       render_save(group);
-      render_color(group, V4(0, 0, 0, 1));
-      render_translate(group, V3(total_width + 0.1f, 0.9f, 0));
-      char buffer[256];
-      sprintf_s(buffer, array_count(buffer), "%.2f ms", 
+      render_color(group, COLOR_BLACK);
+      render_translate(group, V3(total_width + 10, total_heigt - 14, 0));
+      char *buffer = arena_push_array(scratch, char, 256);
+      sprintf_s(buffer, 256, "%.2f ms", 
                 (f32)(end_cycles - begin_cycles)/(f32)MAX_CYCLES*16.6f);
       
       String str = from_c_string(buffer);
@@ -222,6 +230,8 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
     render_save(group);
     b32 any_frame_selected = false;
     
+    v2 mouse_p = v2_sub(input->mouse.p, V2(gui_camera.width*0.5f, gui_camera.height*0.5f));
+    
     for (i32 i = 0; i < array_count(debug_state->frames); i++) {
       i32 frame_index = (debug_state->frame_index + i) % array_count(debug_state->frames);
       
@@ -231,17 +241,18 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
         u64 end_cycles = frame->events[frame->event_count-1].cycles;
         u64 duration = end_cycles - begin_cycles;
         
-        f32 rect_height = (f32)duration/MAX_CYCLES;
+        f32 rect_height = (f32)duration/MAX_CYCLES*total_heigt;
         
         rect2 rect = rect2_min_size(V2(0, 0), 
                                     V2(rect_width, rect_height));
-        v4 color = V4(0, 1, 0, 1);
+        v4 color = COLOR_GREEN;
+        
         rect2 mouse_rect = rect;
         mouse_rect.max.y = mouse_rect.min.y+total_heigt;
         mouse_rect = rect2_apply_matrix(mouse_rect, group->state.matrix);
-        v2 mouse_p_meters = get_mouse_p_meters(input, screen_size);
-        if (point_in_rect(mouse_p_meters, mouse_rect)) {
-          color = V4(1, 0, 0, 1);
+        
+        if (point_in_rect(mouse_p, mouse_rect)) {
+          color = COLOR_RED;
           debug_state->pause = true;
           any_frame_selected = true;
           
@@ -311,9 +322,8 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
       Debug_Frame *frame = debug_state->frames +
         debug_state->gui.selected_frame_index;
       
-      
       render_save(group);
-      v3 text_p = V3(0.1f, LINE_INTERVAL, 0);
+      v3 text_p = V3(0, -20, 0);
       render_translate(group, text_p);
       i32 node_index = 1;
       
@@ -337,7 +347,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
         v3 indent_trans = V3(0.1f*node->depth, 0, 0);
         render_translate(group, indent_trans);
         
-        f32 rect_width = font_get_text_width(&gui->font, str)/PIXELS_PER_METER;
+        f32 rect_width = font_get_text_width_pixels(&gui->font, str);
         rect2 on_screen_rect = rect2_min_size(V2(0, -0.04f), V2(rect_width, LINE_INTERVAL));
         rect2 rect = rect2_apply_matrix(on_screen_rect, 
                                         group->state.matrix);
@@ -345,23 +355,16 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
         render_color(group, DEBUG_BG_COLOR);
         push_rect(group, on_screen_rect);
         
-        v2 mouse_p_meters = get_mouse_p_meters(input, group->screen_size);
         i32 child_indices_count = node->one_past_last_child_index - 
           node->first_child_index;
         
-        render_color(group, V4(0, 0, 0, 1));
+        render_color(group, COLOR_WHITE);
         
-        if (point_in_rect(mouse_p_meters, rect)) {
+        if (point_in_rect(mouse_p, rect)) {
           any_frame_selected = true;
           if (child_indices_count > 0) {
-            render_color(group, V4(0, 1, 0, 1));
+            render_color(group, COLOR_GREEN);
             if (input->mouse.left.went_down) {
-#if 0
-              if (node->type == Debug_View_Type_TREE) 
-                node->type = Debug_View_Type_NONE;
-              else
-                node->type = Debug_View_Type_TREE;
-#endif
               node->type++;
               if (node->type > Debug_View_Type_FLAT) {
                 node->type = Debug_View_Type_NONE;
@@ -370,6 +373,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
           }
         }
         
+        render_translate(group, V3(0, 5, 0));
         push_text(group, str);
         render_restore(group);
         
@@ -450,7 +454,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
             v3 indent_trans = V3(0.1f*node->depth, 0, 0);
             render_translate(group, indent_trans);
             
-            f32 rect_width = font_get_text_width(&gui->font, str)/PIXELS_PER_METER;
+            f32 rect_width = font_get_text_width_pixels(&gui->font, str);
             rect2 on_screen_rect = rect2_min_size(V2(0, -0.04f),
                                                   V2(rect_width, LINE_INTERVAL));
             
@@ -460,8 +464,9 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
             i32 child_indices_count = node->one_past_last_child_index -
               node->first_child_index;
             
-            render_color(group, V4(1, 1, 1, 1));
+            render_color(group, COLOR_WHITE);
             
+            render_translate(group, V3(0, 5, 0));
             push_text(group, str);
             render_restore(group);
             
@@ -479,7 +484,6 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
       render_restore(group);
     }
     
-#if 1   
     if (!any_frame_selected) {
       if (debug_state->gui.selected_frame_index >= 0) {
         if (input->mouse.left.went_down) {
@@ -490,8 +494,6 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
         debug_state->pause = false;
       }
     }
-#endif
-    
   }
   
   render_group_output(&debug_state->arena, group, &state->renderer);

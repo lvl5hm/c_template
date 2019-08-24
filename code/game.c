@@ -239,7 +239,7 @@ Entity *add_entity_shooter(State *state) {
   e->mp.max = 0;
   e->mp.regen = 0;
   
-  e->speed = 0.5f;
+  e->speed = 0;//0.5f;
   e->collider.box.rect = rect2_center_size(V2(0, 0), V2(1, 1));
   e->collider.type = Collider_Type_BOX;
   e->controller_type = Controller_Type_AI_SHOOTER;
@@ -999,7 +999,8 @@ extern GAME_UPDATE(game_update) {
     
 #include "robot_animation.h"
     
-    zero_memory_slow(&state->camera, sizeof(Camera));
+    Camera zero_camera = {0};
+    state->camera = zero_camera;
     state->is_initialized = true;
   }
   
@@ -1031,7 +1032,7 @@ extern GAME_UPDATE(game_update) {
   Render_Group *group = &_group;
   
   
-  render_group_init(&state->temp, state, group, 10000, &state->camera, screen_size);
+  render_group_init(&state->temp, state, group, 10000, &state->camera);
   
   global_group = group;
   render_font(group, &state->font);
@@ -1297,18 +1298,17 @@ extern GAME_UPDATE(game_update) {
     }
     
     
+#if 0
     if (flag_is_set(e->flags, Entity_Flag_ACTOR)) {
       // NOTE(lvl5): draw hp and mp
       String hp_string = tsprintf("HP: %.02f", e->hp.v);
-      f32 hp_string_width = text_get_size(group, hp_string);
+      f32 hp_string_width = font_get_text_width_meters(group->state.font, hp_string);
       
       String mp_string = tsprintf("MP: %.02f", e->mp.v);
-      f32 mp_string_width = text_get_size(group, mp_string);
       
       String ai_string = tsprintf("AI: %s %0.0f%%", 
                                   Ai_State_to_string[e->ai_state],
                                   e->ai_progress*100);
-      f32 ai_string_width = text_get_size(group, ai_string);
       
       render_save(group);
       render_color(group, V4(0, 0, 0, 1));
@@ -1323,7 +1323,7 @@ extern GAME_UPDATE(game_update) {
       
       render_restore(group);
     }
-    
+#endif
     render_save(group);
     render_transform(group, e->t);
     

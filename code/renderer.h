@@ -4,6 +4,11 @@
 #include "lvl5_math.h"
 #include "font.h"
 
+#define COLOR_WHITE (v4){1, 1, 1, 1}
+#define COLOR_BLACK (v4){0, 0, 0, 1}
+#define COLOR_RED (v4){1, 0, 0, 1}
+#define COLOR_GREEN (v4){0, 1, 0, 1}
+#define COLOR_BLUE (v4){0, 0, 1, 1}
 
 
 typedef struct {
@@ -92,7 +97,6 @@ typedef struct {
   i32 item_capacity;
   i32 expected_quad_count;
   
-  v2 screen_size;
   Camera *camera;
   
   Render_State state;
