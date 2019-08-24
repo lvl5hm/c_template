@@ -1044,6 +1044,8 @@ extern GAME_UPDATE(game_update) {
 #endif
   
   
+  debug_log("x = %0.2f; y = %0.2f", state->camera.p.x, state->camera.p.y);
+  
   DEBUG_SECTION_BEGIN(_draw_tiles);
   for (u32 chunk_index = 0; chunk_index < sb_count(state->tile_map.chunks); chunk_index++) {
     Tile_Chunk *chunk = state->tile_map.chunks + chunk_index;

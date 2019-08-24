@@ -29,8 +29,20 @@ i32 max_i32(i32 a, i32 max) {
   return result;
 }
 
+u32 max_u32(u32 a, u32 max) {
+  u32 result = a > max ? a : max;
+  return result;
+}
+
+
+
 i32 min_i32(i32 a, i32 min) {
   i32 result = a < min ? a : min;
+  return result;
+}
+
+u32 min_u32(u32 a, u32 min) {
+  u32 result = a < min ? a : min;
   return result;
 }
 
@@ -1031,6 +1043,15 @@ b32 point_in_circle(v2 point, v2 origin, f32 radius) {
   }
   return result;
 }
+
+b32 point_in_rect(v2 point, rect2 rect) {
+  b32 result = point.x > rect.min.x &&
+    point.x <= rect.max.x &&
+    point.y > rect.min.y &&
+    point.y <= rect.max.y;
+  return result;
+}
+
 
 #define LVL5_MATH
 #endif

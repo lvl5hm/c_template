@@ -178,6 +178,14 @@ void push_rect_outline(Render_Group *group, rect2 rect, f32 thick) {
 void push_text(Render_Group *group, String text) {
   DEBUG_FUNCTION_BEGIN();
   
+  Font *font = group->state.font;
+  for (u32 i = 0; i < text.count; i++) {
+    char ch = text.data[i];
+    
+    assert(ch >= font->first_codepoint_index && 
+           ch < font->first_codepoint_index + font->codepoint_count);
+  }
+  
   Render_Text *entry = push_render_item(group, Text);
   entry->text = text;
   group->expected_quad_count += text.count - 1; // 1 is automatically pushed by push_render_item()
@@ -338,7 +346,9 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
   if (group->item_count == 0) {
     return;
   }
-  Quad_Instance *instances = sb_init(arena, Quad_Instance, group->expected_quad_count, true);
+  
+  Quad_Instance *instances = arena_push_array(arena, Quad_Instance, group->expected_quad_count);
+  i32 instance_count = 0;
   
   Texture_Atlas *atlas = 0;
   
@@ -354,21 +364,18 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           mat4 view_matrix = camera_get_view_matrix(group->camera);
           mat4 projection_matrix = camera_get_projection_matrix(group->camera);
           quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
-                             projection_matrix, instances, sb_count(instances));
-          sb_count(instances) = 0;
+                             projection_matrix, instances, instance_count);
+          instance_count = 0;
         }
-        
         
         mat4 model_m = item->state.matrix;
         rect2 tex_rect = sprite_get_rect(sprite);
         
-        Quad_Instance inst = {0};
-        inst.model = mat4_transpose(model_m);
-        inst.tex_offset = tex_rect.min;
-        inst.tex_scale = rect2_get_size(tex_rect);
-        inst.color = item->state.color;
-        
-        sb_push(instances, inst);
+        Quad_Instance *inst = instances + instance_count++;
+        inst->model = model_m;
+        inst->tex_offset = tex_rect.min;
+        inst->tex_scale = rect2_get_size(tex_rect);
+        inst->color = item->state.color;
         
         atlas = sprite.atlas;
       } break;
@@ -378,21 +385,19 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
       } break;
       
       case Render_Type_Text: {
-        if (atlas && sb_count(instances)) {
+        if (atlas && instance_count) {
           mat4 view_matrix = camera_get_view_matrix(group->camera);
           mat4 projection_matrix = camera_get_projection_matrix(group->camera);
           quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
-                             projection_matrix, instances, sb_count(instances));
-          sb_count(instances) = 0;
+                             projection_matrix, instances, instance_count);
+          
+          instance_count = 0;
         }
         
         Font *font = item->state.font;
         String text = item->Text.text;
         mat4 model_m = item->state.matrix;
         
-        // TODO(lvl5): this is scaled based on pixels per meter, but it should be based on camera scale
-        //v3 scale = v3_invert(V3(PIXELS_PER_METER, PIXELS_PER_METER, 1.0f));
-        //model_m =  mat4_mul_mat4(model_m, mat4_scaled(scale));
         
         for (u32 char_index = 0; char_index < text.count; char_index++) {
           char ch = text.data[char_index];
@@ -413,19 +418,15 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           self_m.e30 -= spr.origin.x;
           self_m.e31 -= spr.origin.y;
           
-          self_m.e30 = round_f32(self_m.e30) + 0.5f;
-          self_m.e31 = round_f32(self_m.e31) + 0.5f;
-          
-          Quad_Instance inst = {0};
-          inst.model = mat4_transpose(self_m);
-          inst.tex_offset = tex_rect.min;
-          inst.tex_scale = rect2_get_size(tex_rect);
-          inst.color = item->state.color;
-          
-          sb_push(instances, inst);
+          Quad_Instance *inst = instances + instance_count++;
+          inst->model = self_m;
+          inst->tex_offset = tex_rect.min;
+          inst->tex_scale = rect2_get_size(tex_rect);
+          inst->color = item->state.color;
           
           model_m.e30 += metrics.advance;
         }
+        
         atlas = &font->atlas;
       } break;
       
@@ -438,7 +439,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
   mat4 projection_matrix = camera_get_projection_matrix(group->camera);
   
   quad_renderer_draw(renderer, &atlas->bmp, view_matrix, projection_matrix, 
-                     instances, sb_count(instances));
+                     instances, instance_count);
   
   DEBUG_FUNCTION_END();
 }

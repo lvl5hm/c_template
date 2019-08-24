@@ -30,14 +30,6 @@ v2 get_mouse_p_meters(Input *input, v2 screen_size) {
   return mouse_p_meters;
 }
 
-b32 point_in_rect(v2 point, rect2 rect) {
-  b32 result = point.x > rect.min.x &&
-    point.x < rect.max.x &&
-    point.y > rect.min.y &&
-    point.y < rect.max.y;
-  return result;
-}
-
 i32 debug_get_var_i32(Debug_Var_Name name) {
   i32 result = debug_state->vars[name].value;
   return result;
@@ -52,13 +44,16 @@ void debug_init(Arena *temp, byte *debug_memory) {
                        const_string("fonts/Inconsolata-Regular.ttf"));
   
   // NOTE(lvl5): variables
-  debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 1};
+  debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 0};
   debug_state->vars[Debug_Var_Name_COLLIDERS] = (Debug_Var){const_string("colliders"), 1};
   debug_state->vars[Debug_Var_Name_MEMORY] = (Debug_Var){const_string("memory"), 0};
   
   
   // NOTE(lvl5): terminal
   Debug_Terminal *term = &gui->terminal;
+  arena_init_subarena(&debug_state->arena, &term->arena, megabytes(2));
+  term->lines = sb_init(&term->arena, String, 128, true);
+  term->history = sb_init(&term->arena, String, 64, true);
   term->input_capacity = 512;
   term->input_data = arena_push_array(&debug_state->arena, char, 
                                       term->input_capacity);
@@ -73,85 +68,190 @@ void debug_add_arena(Arena *arena, String name) {
   da->arena = arena;
 }
 
+#define LINE_INTERVAL 20
 #define DEBUG_BG_COLOR V4(0, 0, 0, 0.7f)
 
+
+void debug_terminal_history_save(Debug_Terminal *term) {
+  String entry = alloc_string(&term->arena, term->input_data + 1, term->input_count - 2);
+  sb_push(term->history, entry);
+}
+
+void debug_terminal_history_restore(Debug_Terminal *term) {
+  String hist = term->history[term->history_index];
+  copy_memory_slow(term->input_data + 1, hist.data, hist.count);
+  term->input_count = hist.count + 1;
+  term->cursor = hist.count + 1;
+}
+
+void debug_log_string(String str) {
+  Debug_Terminal *term = &debug_state->gui.terminal;
+  String line = alloc_string(&term->arena, str.data, str.count);
+  
+  if (sb_count(term->lines) == sb_capacity(term->lines)) {
+    for (u32 i = 0; i < sb_count(term->lines)-1; i++) {
+      term->lines[i] = term->lines[i+1];
+    }
+    term->lines[sb_count(term->lines)-1] = line;
+  } else {
+    sb_push(term->lines, line);
+  }
+}
+
+void debug_log(char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  
+  char *buffer = arena_push_array(scratch, char, 256);
+  vsprintf_s(buffer, 256, fmt, args);
+  String fmt_string = make_string(buffer, c_string_length(buffer));
+  
+  va_end(args);
+  
+  debug_log_string(fmt_string);
+}
+
 void debug_draw_terminal(Debug_Terminal *term, Render_Group *group, Input *input,
-                         v2 screen_meters) {
+                         v2 screen_size) {
   DEBUG_FUNCTION_BEGIN();
   
   if (input->keys[Key_Code_TILDE].went_down) {
-    term->is_active = !term->is_active;
+    if (!term->is_shown) {
+      term->is_shown = true;
+      term->is_active = true;
+    } else {
+      term->is_shown = false;
+      term->is_active = false;
+    }
     return;
   }
   
-  if (!term->is_active) return;
+  if (!term->is_shown) return;
   
-#define LETTER_SIZE 0.0795f
-  if (input->keys[Key_Code_BACK].pressed) {
-    if (term->input_count > 1) {
-      if (term->cursor > 1) {
-        for (i32 i = term->cursor; i < term->input_count; i++) {
-          term->input_data[i-1] = term->input_data[i];
-        }
-        term->cursor--;
-        term->input_count--;
-      }
-    }
-  } else if (input->char_code) {
-    assert(term->input_count < term->input_capacity);
-    for (i32 i = term->input_count; i >= term->cursor; i--) {
-      term->input_data[i+1] = term->input_data[i];
-    }
-    term->input_data[term->cursor++] = input->char_code;
-    term->input_count++;
-  }
-  
-  if (input->keys[Key_Code_RIGHT].pressed) {
-    term->cursor = clamp_i32(term->cursor + 1, 1, term->input_count);;
-  } else if (input->keys[Key_Code_LEFT].pressed) {
-    term->cursor = clamp_i32(term->cursor - 1, 1, term->input_count);;
-  }
-  
-  if (input->keys[Key_Code_ENTER].went_down) {
-    String str = make_string(term->input_data+1, term->input_count-1);
-    if (starts_with(str, const_string("set"))) {
-      i32 space_index = find_index(str, const_string(" "), 4);
-      String var_name = substring(str, 4, space_index);
-      String value_str = substring(str, space_index+1, str.count-1);
-      
-      for (i32 var_index = 0; var_index < array_count(debug_state->vars); var_index++) {
-        Debug_Var *var = debug_state->vars + var_index;
-        if (string_compare(var_name, var->name)) {
-          i32 value = string_to_i32(value_str);
-          var->value = value;
+  if (term->is_active) {
+    if (input->keys[Key_Code_BACK].pressed) {
+      if (term->input_count > 1) {
+        if (term->cursor > 1) {
+          for (i32 i = term->cursor; i < term->input_count; i++) {
+            term->input_data[i-1] = term->input_data[i];
+          }
+          term->cursor--;
+          term->input_count--;
         }
       }
+    } else if (input->char_code) {
+      assert(term->input_count < term->input_capacity);
+      for (i32 i = term->input_count; i >= term->cursor; i--) {
+        term->input_data[i+1] = term->input_data[i];
+      }
+      term->input_data[term->cursor++] = input->char_code;
+      term->input_count++;
     }
     
-    term->input_count = 1;
-    term->cursor = 1;
+    if (input->keys[Key_Code_RIGHT].pressed) {
+      term->cursor = clamp_i32(term->cursor + 1, 1, term->input_count);;
+    } else if (input->keys[Key_Code_LEFT].pressed) {
+      term->cursor = clamp_i32(term->cursor - 1, 1, term->input_count);;
+    } else if (input->keys[Key_Code_UP].pressed) {
+      if (term->history_index == -1) {
+        if (term->input_count > 1) {
+          debug_terminal_history_save(term);
+          term->history_index = sb_count(term->history) - 2;
+        } else {
+          term->history_index = sb_count(term->history) - 1;
+        }
+      } else {
+        term->history_index = clamp_i32(term->history_index - 1, 0, sb_count(term->history));
+      }
+      
+      debug_terminal_history_restore(term);
+    } else if (input->keys[Key_Code_DOWN].pressed) {
+      term->history_index = clamp_i32(term->history_index + 1, 0, sb_count(term->history));
+      debug_terminal_history_restore(term);
+    }
+    
+    
+    if (input->keys[Key_Code_ENTER].pressed) {
+      debug_terminal_history_save(term);
+      term->history_index = -1;
+      
+      String str = make_string(term->input_data+1, term->input_count-2);
+      debug_log_string(str);
+      
+      term->input_count = 1;
+      term->cursor = 1;
+      
+      if (starts_with(str, const_string("set"))) {
+        i32 space_index = find_index(str, const_string(" "), 4);
+        String var_name = substring(str, 4, space_index);
+        String value_str = substring(str, space_index+1, str.count);
+        
+        for (i32 var_index = 0; var_index < array_count(debug_state->vars); var_index++) {
+          Debug_Var *var = debug_state->vars + var_index;
+          if (string_compare(var_name, var->name)) {
+            i32 value = string_to_i32(value_str);
+            var->value = value;
+          }
+        }
+      }
+    }
   }
+  
+  Codepoint_Metrics metrics = font_get_metrics(group->state.font, 'a');
+  f32 letter_size = metrics.advance; // assumed to be monospace
+  
   String terminal_string = make_string(term->input_data, term->input_count);
   
   render_save(group);
-  render_translate(group, V3(-0.5f*screen_meters.x + 0.05f,
-                             0.5f*screen_meters.y - 0.12f,
+  render_translate(group, V3(-0.5f*screen_size.x,
+                             0.5f*screen_size.y,
                              0));
   
   render_color(group, DEBUG_BG_COLOR);
-  push_rect(group, rect2_min_size(V2(-0.05f, -0.04f), V2(screen_meters.x, 0.3f)));
-  render_color(group, V4(1, 1, 1, 1));
+  i32 shown_line_count = 8;
+  f32 terminal_height = LINE_INTERVAL*(f32)shown_line_count;
   
-  push_rect(group, rect2_center_size(V2(term->cursor*LETTER_SIZE, 0.05f),
-                                     V2(0.02f, 0.1f)));
+  rect2 terminal_rect = rect2_min_size(V2(0, -terminal_height), V2(screen_size.x, terminal_height));
+  rect2 mouse_rect = rect2_apply_matrix(terminal_rect, group->state.matrix);
+  v2 mouse_p = v2_sub(input->mouse.p, v2_mul(screen_size, 0.5f));
+  if (input->mouse.left.went_down) {
+    if (point_in_rect(mouse_p, mouse_rect)) {
+      term->is_active = true;
+    } else {
+      term->is_active = false;
+    }
+  }
+  
+  push_rect(group, terminal_rect);
+  
+  
+  render_translate(group, V3(0, -terminal_height + 5, 0));
+  
+  if (term->is_active) {
+    render_color(group, V4(0, 1, 0, 0.7f));
+  } else {
+    render_color(group, V4(0, 0, 0, 0));
+  }
+  push_rect(group, rect2_min_size(V2(term->cursor*letter_size, -3),
+                                  V2(letter_size, 15)));
+  
+  render_color(group, COLOR_WHITE);
   push_text(group, terminal_string);
+  
+  
+  u32 line_count = sb_count(term->lines);
+  for (u32 shown_line_index = 0;
+       shown_line_index < min_u32(line_count, shown_line_count);
+       shown_line_index++) {
+    u32 line_index = line_count - shown_line_index - 1;
+    render_translate(group, V3(0, LINE_INTERVAL, 0));
+    push_text(group, term->lines[line_index]);
+  }
   
   render_restore(group);
   DEBUG_FUNCTION_END();
 }
 
-#define LINE_INTERVAL 20
-// 0.013f*PIXELS_PER_METER
 
 void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   DEBUG_FUNCTION_BEGIN();
@@ -265,8 +365,8 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
             
             Debug_Frame *frame = debug_state->frames + gui->selected_frame_index;
             i32 node_capacity = frame->timer_count+1;
-            gui->nodes = arena_push_array(&gui->arena, 
-                                          Debug_View_Node, node_capacity*3);
+            gui->nodes = arena_push_array(&gui->arena,
+                                          Debug_View_Node, node_capacity);
             i32 node_index = 0;
             gui->node_count = 1;
             i32 depth = 0;
@@ -281,7 +381,6 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
               
               if (event->type == Debug_Type_BEGIN_TIMER) {
                 i32 new_index =  gui->node_count++;
-                //assert(new_index < node_capacity);
                 Debug_View_Node *node = gui->nodes + new_index;
                 node->type = Debug_View_Type_NONE;
                 node->name = alloc_string(&gui->arena, event->name,
@@ -344,11 +443,11 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
         String str = from_c_string(buffer);
         
         render_save(group);
-        v3 indent_trans = V3(0.1f*node->depth, 0, 0);
+        v3 indent_trans = V3(10.0f*node->depth, 0, 0);
         render_translate(group, indent_trans);
         
         f32 rect_width = font_get_text_width_pixels(&gui->font, str);
-        rect2 on_screen_rect = rect2_min_size(V2(0, -0.04f), V2(rect_width, LINE_INTERVAL));
+        rect2 on_screen_rect = rect2_min_size(V2(0, 0), V2(rect_width, LINE_INTERVAL));
         rect2 rect = rect2_apply_matrix(on_screen_rect, 
                                         group->state.matrix);
         
@@ -451,12 +550,12 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
             String str = from_c_string(buffer);
             
             render_save(group);
-            v3 indent_trans = V3(0.1f*node->depth, 0, 0);
+            v3 indent_trans = V3(10.0f*node->depth, 0, 0);
             render_translate(group, indent_trans);
             
             f32 rect_width = font_get_text_width_pixels(&gui->font, str);
-            rect2 on_screen_rect = rect2_min_size(V2(0, -0.04f),
-                                                  V2(rect_width, LINE_INTERVAL));
+            rect2 on_screen_rect = 
+              rect2_min_size(V2(0, 0), V2(rect_width, LINE_INTERVAL));
             
             render_color(group, DEBUG_BG_COLOR);
             push_rect(group, on_screen_rect);

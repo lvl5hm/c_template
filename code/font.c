@@ -89,21 +89,19 @@ Texture_Atlas make_texture_atlas_from_bitmaps(Arena *arena, i32 max_width, Bitma
   result.sprite_count = count;
   result.rects = arena_push_array(arena, rect2, count);
   
-#define PADDING_X 4
-#define PADDING_Y 4
-  
   i32 current_x = 0;
   i32 current_y = 0;
   i32 max_line_height = 0;
   
   for (i32 bitmap_index = 0; bitmap_index < count; bitmap_index++) {
     Bitmap *bmp = bitmaps + bitmap_index;
-    assert(bmp->width <= max_width + PADDING_X);
+    assert(bmp->width <= max_width);
     
     rect2 *rect = result.rects + bitmap_index;
     if (current_x + bmp->width > max_width) {
       current_x = 0;
       current_y += max_line_height;
+      max_line_height = 0;
     }
     
     rect->min.x = (f32)current_x;

@@ -46,11 +46,17 @@ typedef struct {
 } Debug_View_Node;
 
 typedef struct {
+  Arena arena;
   char *input_data;
   i32 input_count;
   i32 input_capacity;
   i32 cursor;
+  b32 is_shown;
   b32 is_active;
+  
+  String *lines;
+  String *history;
+  i32 history_index; // -1 == inputting new command
 } Debug_Terminal;
 
 typedef struct {
