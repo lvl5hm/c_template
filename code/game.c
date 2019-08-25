@@ -1076,6 +1076,15 @@ extern GAME_UPDATE(game_update) {
 #endif
   DEBUG_SECTION_END(_draw_tiles);
   
+#if 0
+  Sprite whole_atlas = {
+    .atlas = &state->atlas,
+    .index = 1,
+    .origin = v2_zero(),
+  };
+  push_sprite(group, state->spr_robot_eye, transform_default());
+#endif
+  
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
     Entity *e = get_entity(state, entity_index);
     if (!e) continue;
@@ -1093,8 +1102,7 @@ extern GAME_UPDATE(game_update) {
     
     switch (e->controller_type) {
       case Controller_Type_PLAYER: {
-        particle_emitter_emit(&state->test_particle_emitter, &state->rand,
-                              e->t.p, 3000);
+        particle_emitter_emit(&state->test_particle_emitter, &state->rand, e->t.p, 1);
         push_particle_emitter(group, &state->test_particle_emitter, dt);
         
         e->target_p = v2_to_v3(mouse_world, 0);

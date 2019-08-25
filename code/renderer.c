@@ -369,10 +369,10 @@ void particle_emitter_emit(Particle_Emitter *emitter, Rand *rand, v3 pos, i32 co
   v3 d_pos_max = V3(4, 4, 0);
   v3 d_scale_min = V3(-0.1f, -0.1f, 0);
   v3 d_scale_max = V3(-0.02f, -0.02f, 0);
-  f32 d_angle_min = 0.2f;
-  f32 d_angle_max = -0.2f;
-  v4 d_color_min = V4(0.01f, 0.01f, 0.01f, -0.01f);
-  v4 d_color_max = V4(-0.01f, -0.01f, -0.01f, -0.05f);
+  f32 d_angle_min = 1.0f;
+  f32 d_angle_max = -1.0f;
+  v4 d_color_min = V4(0.01f, 0.01f, 0.01f, -0.1f);
+  v4 d_color_max = V4(-0.01f, -0.01f, -0.01f, -0.5f);
   
   f32 lifetime_min = 2.0f;
   f32 lifetime_max = 5.0f;
@@ -471,42 +471,42 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
         
         DEBUG_SECTION_BEGIN(_particles_render);
         
+        atlas = emitter->sprite.atlas;
         mat4 model_m = item->state.matrix;
         rect2 tex_rect = sprite_get_rect(emitter->sprite);
+        v2 size = rect2_get_size(tex_rect);
+        u16 tex_x = (u16)(tex_rect.min.x*atlas->bmp.width);
+        u16 tex_y = (u16)(tex_rect.min.y*atlas->bmp.height);
+        u16 tex_width = (u16)(size.x*atlas->bmp.width);
+        u16 tex_height = (u16)(size.y*atlas->bmp.height);
         
         for (i32 particle_index = 0;
              particle_index < emitter->particle_count;
              particle_index++) {
           Particle *p = emitter->particles + particle_index;
           
-#if 0
-          mat4 self_m = transform_apply(model_m, p->t);
-#else
+          
           mat4 self_m = model_m;
           // NOTE(lvl5): scale
           self_m.e00 *= p->t.scale.x;
           self_m.e11 *= p->t.scale.y;
           self_m.e22 *= p->t.scale.z;
           
-          // NOTE(lvl5): rotate
-          f32 cos = cos_f32(-p->t.angle);
-          f32 sin = sin_f32(-p->t.angle);
-          self_m.e00 *= cos;
-          self_m.e11 *= cos;
-          self_m.e10 *= sin;
-          self_m.e01 *= -sin;
+          self_m = mat4_mul_mat4(mat4_rotated(p->t.angle), self_m);
           
           // NOTE(lvl5): translate
           self_m.e30 += p->t.p.x;
           self_m.e31 += p->t.p.y;
           self_m.e32 += p->t.p.z;
           
-#endif
-          
           Quad_Instance *inst = instances + instance_count++;
           inst->model = self_m;
           
-          set_instance_params(inst, self_m, emitter->sprite.atlas, tex_rect, p->color);
+          inst->tex_x = tex_x;
+          inst->tex_y = tex_y;
+          inst->tex_width = tex_width;
+          inst->tex_height = tex_height;
+          inst->color = color_v4_to_u32(p->color);
           
           // NOTE(lvl5): simulate
           f32 dt = item->Particle_Emitter.dt;
@@ -521,7 +521,6 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
             particle_index--;
           }
         }
-        atlas = emitter->sprite.atlas;
         DEBUG_SECTION_END(_particles_render);
       } break;
       

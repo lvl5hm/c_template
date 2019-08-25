@@ -79,8 +79,8 @@ i32 pow_i32(i32 a, i32 n) {
 }
 
 f32 sin_f32(f32 x) {
-#if 0
-  f32 result = sinf(a);
+#if 1
+  f32 result = sinf(x);
 #else
   float xx = x*x;
   float result = x + (x * xx) * (-0.16612511580269618f + xx * (8.0394356072977748e-3f + xx * -1.49414020045938777495e-4f));
