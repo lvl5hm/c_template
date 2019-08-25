@@ -44,7 +44,7 @@ void debug_init(Arena *temp, byte *debug_memory) {
                        const_string("fonts/Inconsolata-Regular.ttf"));
   
   // NOTE(lvl5): variables
-  debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 0};
+  debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 1};
   debug_state->vars[Debug_Var_Name_COLLIDERS] = (Debug_Var){const_string("colliders"), 1};
   debug_state->vars[Debug_Var_Name_MEMORY] = (Debug_Var){const_string("memory"), 0};
   

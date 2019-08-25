@@ -230,11 +230,9 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state) {
   gl.VertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
                          (void *)(model_offset+3*v4_size));
   
-  gl.VertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
-                         (void *)offsetof(Quad_Instance, tex_offset));
-  gl.VertexAttribPointer(6, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
-                         (void *)offsetof(Quad_Instance, tex_scale));
-  gl.VertexAttribPointer(7, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Quad_Instance),
+  gl.VertexAttribPointer(5, 4, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(Quad_Instance),
+                         (void *)offsetof(Quad_Instance, tex_x));
+  gl.VertexAttribPointer(6, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Quad_Instance),
                          (void *)offsetof(Quad_Instance, color));
   
   gl.EnableVertexAttribArray(1);
@@ -243,7 +241,6 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state) {
   gl.EnableVertexAttribArray(4);
   gl.EnableVertexAttribArray(5);
   gl.EnableVertexAttribArray(6);
-  gl.EnableVertexAttribArray(7);
   
   gl.VertexAttribDivisor(1, 1);
   gl.VertexAttribDivisor(2, 1);
@@ -251,7 +248,6 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state) {
   gl.VertexAttribDivisor(4, 1);
   gl.VertexAttribDivisor(5, 1);
   gl.VertexAttribDivisor(6, 1);
-  gl.VertexAttribDivisor(7, 1);
   gl.BindVertexArray(null);
   
   // NOTE(lvl5): buffer data
@@ -416,6 +412,17 @@ u32 color_v4_to_u32(v4 color) {
   return result;
 }
 
+void set_instance_params(Quad_Instance *inst, mat4 model_m, Texture_Atlas *atlas, rect2 tex_rect, v4 color) {
+  inst->model = model_m;
+  v2 size = rect2_get_size(tex_rect);
+  
+  inst->tex_x = (u16)(tex_rect.min.x*atlas->bmp.width);
+  inst->tex_y = (u16)(tex_rect.min.y*atlas->bmp.height);
+  inst->tex_width = (u16)(size.x*atlas->bmp.width);
+  inst->tex_height = (u16)(size.y*atlas->bmp.height);
+  inst->color = color_v4_to_u32(color);
+}
+
 void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *renderer) {
   DEBUG_FUNCTION_BEGIN();
   
@@ -451,10 +458,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
         rect2 tex_rect = sprite_get_rect(sprite);
         
         Quad_Instance *inst = instances + instance_count++;
-        inst->model = model_m;
-        inst->tex_offset = tex_rect.min;
-        inst->tex_scale = rect2_get_size(tex_rect);
-        inst->color = color_v4_to_u32(item->state.color);
+        set_instance_params(inst, model_m, sprite.atlas, tex_rect, item->state.color);
         
         atlas = sprite.atlas;
       } break;
@@ -501,9 +505,8 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           
           Quad_Instance *inst = instances + instance_count++;
           inst->model = self_m;
-          inst->tex_offset = tex_rect.min;
-          inst->tex_scale = rect2_get_size(tex_rect);
-          inst->color = color_v4_to_u32(p->color);
+          
+          set_instance_params(inst, self_m, emitter->sprite.atlas, tex_rect, p->color);
           
           // NOTE(lvl5): simulate
           f32 dt = item->Particle_Emitter.dt;
@@ -531,7 +534,6 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
         String text = item->Text.text;
         mat4 model_m = item->state.matrix;
         
-        
         for (u32 char_index = 0; char_index < text.count; char_index++) {
           char ch = text.data[char_index];
           
@@ -552,10 +554,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           self_m.e31 -= spr.origin.y*group->camera->scale.y;
           
           Quad_Instance *inst = instances + instance_count++;
-          inst->model = self_m;
-          inst->tex_offset = tex_rect.min;
-          inst->tex_scale = rect2_get_size(tex_rect);
-          inst->color = color_v4_to_u32(item->state.color);
+          set_instance_params(inst, self_m, &item->state.font->atlas, tex_rect, item->state.color);
           
           model_m.e30 += metrics.advance*group->camera->scale.x;
         }

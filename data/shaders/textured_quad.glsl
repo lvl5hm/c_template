@@ -4,22 +4,29 @@
 layout (location = 0) in vec3 v_pos;
 
 layout (location = 1) in mat4x4 inst_model;
-layout (location = 5) in vec2 inst_tex_offset;
-layout (location = 6) in vec2 inst_tex_scale;
-layout (location = 7) in vec4 inst_color;
+layout (location = 5) in vec4 inst_tex;
+layout (location = 6) in vec4 inst_color;
 
 out vec2 fr_tex_coord;
 out vec4 fr_color;
 
 uniform mat4x4 u_view;
 uniform mat4x4 u_projection;
+uniform sampler2D texture_image;
 
 void main() {
   mat4x4 u_model = transpose(inst_model);
   vec4 p = u_projection*u_view*u_model*vec4(v_pos, 1.0f);
   gl_Position = p;
   
-  fr_tex_coord = inst_tex_offset + v_pos.xy*inst_tex_scale;
+  ivec2 atlas_size = textureSize(texture_image, 0);
+  vec4 tex_size = inst_tex;
+  tex_size.x /= atlas_size.x;
+  tex_size.y /= atlas_size.y;
+  tex_size.z /= atlas_size.x;
+  tex_size.w /= atlas_size.y;
+  
+  fr_tex_coord = tex_size.xy + v_pos.xy*tex_size.zw;
   fr_color = inst_color;
 }
 

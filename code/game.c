@@ -1094,7 +1094,7 @@ extern GAME_UPDATE(game_update) {
     switch (e->controller_type) {
       case Controller_Type_PLAYER: {
         particle_emitter_emit(&state->test_particle_emitter, &state->rand,
-                              e->t.p, 10);
+                              e->t.p, 3000);
         push_particle_emitter(group, &state->test_particle_emitter, dt);
         
         e->target_p = v2_to_v3(mouse_world, 0);

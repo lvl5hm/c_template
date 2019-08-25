@@ -17,8 +17,10 @@ typedef struct {
 
 typedef struct {
   mat4 model;
-  v2 tex_offset;
-  v2 tex_scale;
+  u16 tex_x;
+  u16 tex_y;
+  u16 tex_width;
+  u16 tex_height;
   u32 color;
 } Quad_Instance;
 
