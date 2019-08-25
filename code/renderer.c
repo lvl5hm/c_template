@@ -300,7 +300,7 @@ void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp,
 
 
 void render_group_init(Arena *arena, State *state, Render_Group *group,
-                       i32 item_capacity, Camera *camera) {
+                       i32 item_capacity, Camera *camera, v2 screen_size) {
   DEBUG_FUNCTION_BEGIN();
   
   Render_Group zero_group = {0};
@@ -315,6 +315,7 @@ void render_group_init(Arena *arena, State *state, Render_Group *group,
   group->item_capacity = item_capacity;
   group->state_stack_count = 0;
   group->debug_atlas = &state->debug_atlas;
+  group->screen_size = screen_size;
   
   DEBUG_FUNCTION_END();
 }
@@ -328,9 +329,9 @@ mat4 camera_get_view_matrix(Camera *camera) {
   return result;
 }
 
-mat4 camera_get_projection_matrix(Camera *camera) {
-  f32 w = camera->width;
-  f32 h = camera->height;
+mat4 camera_get_projection_matrix(Camera *camera, v2 screen_size) {
+  f32 w = camera->scale.x*screen_size.x;
+  f32 h = camera->scale.y*screen_size.y;
   mat4 result = mat4_orthographic(-w*0.5f, w*0.5f,
                                   -h*0.5f, h*0.5f,
                                   camera->near, camera->far);
@@ -362,7 +363,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
         // TODO(lvl5): remove duplicate code
         if (atlas && atlas != sprite.atlas) {
           mat4 view_matrix = camera_get_view_matrix(group->camera);
-          mat4 projection_matrix = camera_get_projection_matrix(group->camera);
+          mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
           quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
                              projection_matrix, instances, instance_count);
           instance_count = 0;
@@ -387,7 +388,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
       case Render_Type_Text: {
         if (atlas && instance_count) {
           mat4 view_matrix = camera_get_view_matrix(group->camera);
-          mat4 projection_matrix = camera_get_projection_matrix(group->camera);
+          mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
           quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
                              projection_matrix, instances, instance_count);
           
@@ -412,11 +413,11 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           
           mat4 self_m = model_m;
           
-          self_m.e00 *= size_pixels.x;
-          self_m.e11 *= size_pixels.y;
+          self_m.e00 = group->camera->scale.x*size_pixels.x;
+          self_m.e11 = group->camera->scale.y*size_pixels.y;
           
-          self_m.e30 -= spr.origin.x;
-          self_m.e31 -= spr.origin.y;
+          self_m.e30 -= spr.origin.x*group->camera->scale.x;
+          self_m.e31 -= spr.origin.y*group->camera->scale.y;
           
           Quad_Instance *inst = instances + instance_count++;
           inst->model = self_m;
@@ -424,7 +425,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           inst->tex_scale = rect2_get_size(tex_rect);
           inst->color = item->state.color;
           
-          model_m.e30 += metrics.advance;
+          model_m.e30 += metrics.advance*group->camera->scale.x;
         }
         
         atlas = &font->atlas;
@@ -436,7 +437,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
   DEBUG_SECTION_END(_push_instances);
   
   mat4 view_matrix = camera_get_view_matrix(group->camera);
-  mat4 projection_matrix = camera_get_projection_matrix(group->camera);
+  mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
   
   quad_renderer_draw(renderer, &atlas->bmp, view_matrix, projection_matrix, 
                      instances, instance_count);

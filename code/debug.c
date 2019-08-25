@@ -265,12 +265,11 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   Camera gui_camera = {
     .far = 10.0f,
     .near = 0.0f,
-    .width = screen_size.x,
-    .height = screen_size.y,
+    .scale = V2(1, 1),
     .p = v3_zero(),
     .angle = 0,
   };
-  render_group_init(&debug_state->arena, state, group, 10000, &gui_camera); 
+  render_group_init(&debug_state->arena, state, group, 10000, &gui_camera, screen_size); 
   render_font(group, &gui->font);
   
   debug_draw_terminal(&gui->terminal, group, input, screen_size);
@@ -330,7 +329,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
     render_save(group);
     b32 any_frame_selected = false;
     
-    v2 mouse_p = v2_sub(input->mouse.p, V2(gui_camera.width*0.5f, gui_camera.height*0.5f));
+    v2 mouse_p = v2_sub(input->mouse.p, v2_mul(screen_size, 0.5f));
     
     for (i32 i = 0; i < array_count(debug_state->frames); i++) {
       i32 frame_index = (debug_state->frame_index + i) % array_count(debug_state->frames);

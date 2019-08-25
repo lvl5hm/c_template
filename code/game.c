@@ -1024,15 +1024,14 @@ extern GAME_UPDATE(game_update) {
   
   state->camera.far = 10.0f;
   state->camera.near = 0.0f;
-  state->camera.width = screen_size.x/PIXELS_PER_METER;
-  state->camera.height = screen_size.y/PIXELS_PER_METER;
+  state->camera.scale = V2(1.0f/PIXELS_PER_METER, 1.0f/PIXELS_PER_METER);
   
   u64 render_memory = arena_get_mark(&state->temp);
   Render_Group _group;
   Render_Group *group = &_group;
   
   
-  render_group_init(&state->temp, state, group, 10000, &state->camera);
+  render_group_init(&state->temp, state, group, 10000, &state->camera, screen_size);
   
   global_group = group;
   render_font(group, &state->font);
@@ -1043,8 +1042,6 @@ extern GAME_UPDATE(game_update) {
   v2 mouse_world = v2_add(state->camera.p.xy, mouse_meters);
 #endif
   
-  
-  debug_log("x = %0.2f; y = %0.2f", state->camera.p.x, state->camera.p.y);
   
   DEBUG_SECTION_BEGIN(_draw_tiles);
   for (u32 chunk_index = 0; chunk_index < sb_count(state->tile_map.chunks); chunk_index++) {
@@ -1300,7 +1297,7 @@ extern GAME_UPDATE(game_update) {
     }
     
     
-#if 0
+#if 1
     if (flag_is_set(e->flags, Entity_Flag_ACTOR)) {
       // NOTE(lvl5): draw hp and mp
       String hp_string = tsprintf("HP: %.02f", e->hp.v);

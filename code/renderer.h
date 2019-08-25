@@ -83,8 +83,7 @@ typedef struct {
 typedef struct {
   f32 far;
   f32 near;
-  f32 width;
-  f32 height;
+  v2 scale;
   
   f32 angle;
   v3 p;
@@ -98,6 +97,7 @@ typedef struct {
   i32 expected_quad_count;
   
   Camera *camera;
+  v2 screen_size;
   
   Render_State state;
   Render_State state_stack[16];
