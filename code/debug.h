@@ -20,7 +20,7 @@ typedef struct {
 } Debug_Event;
 
 typedef struct {
-  Debug_Event events[20000];
+  Debug_Event events[100000];
   u32 event_count;
   
   i32 timer_count;

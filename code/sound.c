@@ -81,14 +81,25 @@ void sound_init(Sound_State *sound_state) {
 
 Playing_Sound *sound_play(Sound_State *sound_state, Sound *wav, Sound_Type type) {
   assert(sound_state->sound_count < array_count(sound_state->sounds));
-  Playing_Sound *snd = sound_state->sounds + sound_state->sound_count++;
+  
+  i32 index = 0;
+  if (sound_state->empty_sound_slot_count > 0) {
+    index = sound_state->empty_sound_slots[--sound_state->empty_sound_slot_count];
+  } else {
+    index = sound_state->sound_count++;
+  }
+  
+  Playing_Sound zero_sound = {0};
+  Playing_Sound *snd = sound_state->sounds + index;
+  *snd = zero_sound;
   snd->wav = wav;
   snd->position = 0;
   snd->volume = V2(1, 1);
   snd->target_volume = V2(1, 1);
-  snd->index = sound_state->sound_count - 1;
+  snd->index = index;
   snd->speed = 1;
   snd->type = type;
+  snd->is_active = true;
   
   return snd;
 }
@@ -102,29 +113,46 @@ void sound_set_volume(Playing_Sound *snd, v2 target_volume, f32 seconds) {
   }
 }
 
-void sound_stop(Sound_State *state, i32 sound_index) {
-  Playing_Sound *last = state->sounds + state->sound_count - 1;
-  Playing_Sound *removed = state->sounds + sound_index;
-  *removed = *last;
-  state->sound_count--;
+void sound_stop(Sound_State *state, Playing_Sound *snd) {
+  state->empty_sound_slots[state->empty_sound_slot_count++] = snd->index;
+  snd->is_active = false;
 }
 
-#if 1
+Sound_Emitter *sound_emitter_add(Sound_State *state, Sound *wav, v3 p) {
+  assert(state->emitter_count < array_count(state->emitters));
+  Sound_Emitter *emitter = state->emitters + state->emitter_count++;
+  emitter->snd = sound_play(state, wav, Sound_Type_EFFECTS);
+  emitter->p = p;
+  return emitter;
+}
 
-i32 sine_wave_sample_index = 0;
+#define MAX_HEAR_METERS 20
+#define MIC_OFFSET V3(4, 0, 0)
 
-void write_sine_wave(Sound_Buffer *sound_buffer, f32 dt) {
-  for (i32 sample_index = 0; sample_index < sound_buffer->count; sample_index++) {
-    i16 sample = (i16)(sinf((f32)sine_wave_sample_index*0.03f)*32767);
-    sound_buffer->samples[sample_index*2] = sample;
-    sound_buffer->samples[sample_index*2+1] = sample;
-    sine_wave_sample_index++;
+void sound_update_emitters(Sound_State *state, v3 camera_p, f32 dt) {
+  for (i32 emitter_index = 0;
+       emitter_index < state->emitter_count;
+       emitter_index++) {
+    Sound_Emitter *emitter = state->emitters + emitter_index;
+    
+    // TODO(lvl5): update the volume based on camera_p
+    v3 rel_p = v3_sub(emitter->p, camera_p);
+    v3 left_mic_p = v3_negate(MIC_OFFSET);
+    v3 right_mic_p = MIC_OFFSET;
+    
+    f32 right_vol = clamp_f32((MAX_HEAR_METERS - v3_length(v3_sub(rel_p, right_mic_p)))/MAX_HEAR_METERS, 0, 1);
+    f32 left_vol = clamp_f32((MAX_HEAR_METERS - v3_length(v3_sub(rel_p, left_mic_p)))/MAX_HEAR_METERS, 0, 1);
+    
+    sound_set_volume(emitter->snd, V2(left_vol, right_vol), dt);
+    
+    // NOTE(lvl5): remove the emitter if the sound finished playing
+    if (!emitter->snd->is_active) {
+      Sound_Emitter *last = state->emitters + state->emitter_count-1;
+      *emitter = *last;
+      state->emitter_count--;
+    }
   }
-  
-  sine_wave_sample_index -= sound_buffer->overwrite_count;
 }
-#endif
-
 
 void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
                               Arena *temp, f32 dt) {
@@ -147,8 +175,9 @@ void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
   DEBUG_SECTION_END(_clear_buffer);
   
   for (i32 sound_index = 0; sound_index < sound_state->sound_count; sound_index++) {
-    DEBUG_SECTION_BEGIN(_mix_single_sound);
     Playing_Sound *snd = sound_state->sounds + sound_index;
+    if (!snd->is_active) continue;
+    
     Sound *wav = snd->wav;
     //assert(wav->count % 8 == 0);
     
@@ -218,10 +247,9 @@ void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
     snd->position -= dst->overwrite_count*snd->speed;
     
     if (samples_to_mix == samples_left_in_sound) {
-      sound_stop(sound_state, sound_index);
+      sound_stop(sound_state, snd);
       sound_index--;
     }
-    DEBUG_SECTION_END(_mix_single_sound);
   }
   
   DEBUG_SECTION_BEGIN(_fill_sound_buffer);

@@ -255,15 +255,19 @@ typedef struct {
   i32 tile_y;
 } Tile_Position;
 
+
 #define MAX_ENTITY_COUNT 10000
 
 typedef struct {
+  Particle_Emitter test_particle_emitter;
+  
   i32 unique_entity_id;
   Tile_Map tile_map;
   
   Input empty_input;
   Sound test_sound;
   Sound snd_bop;
+  Sound_Emitter *test_emitter;
   
   Sound_State sound_state;
   b32 is_initialized;

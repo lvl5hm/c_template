@@ -16,6 +16,8 @@ typedef enum {
 } Sound_Type;
 
 typedef struct {
+  b32 is_active;
+  
   i32 index;
   Sound *wav;
   f32 position;
@@ -28,8 +30,19 @@ typedef struct {
 } Playing_Sound;
 
 typedef struct {
+  v3 p;
+  Playing_Sound *snd;
+} Sound_Emitter;
+
+typedef struct {
   Playing_Sound sounds[64];
   i32 sound_count;
+  
+  i32 empty_sound_slots[64];
+  i32 empty_sound_slot_count;
+  
+  Sound_Emitter emitters[64];
+  i32 emitter_count;
   
   f32 volume_master;
   f32 volumes[Sound_Type_count];

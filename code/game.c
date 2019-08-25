@@ -20,8 +20,7 @@ there probably is some memory corruption bug that sometimes sets
 audio_state.sound_count to 64
 
 ---- ENGINE ----
-[ ] add separate render group for UI
-[ ] linebreak size should not depend on PIXELS_PER_METER
+[ ] particles
 
 
 [ ] multithreading
@@ -37,7 +36,6 @@ audio_state.sound_count to 64
  -[x] something like interactive flame charts
  -[ ] debug variables and widgets
  -[x] console?
- -[ ] will probably have to do some introspection and metaprogramming
  -[ ] needs to work with multithreading
  -[ ] loading from a save point to debug a slow frame
  
@@ -64,7 +62,7 @@ audio_state.sound_count to 64
  --[ ] phong shading
  
  [ ] assets
- -[ ] better texture map packing
+ -[x] better texture map packing
  -[ ] live reload
  -[ ] asset file format
  --[ ] bitmaps
@@ -73,20 +71,14 @@ audio_state.sound_count to 64
  --[ ] shaders
  -[ ] asset builder
  -[ ] streaming?
- -[ ] splitting bit sounds into chunks?
- 
- [x] sounds
- -[x] basic mixer
- -[x] volume
- -[x] speed shifting
- -[x] SSE?
+ -[ ] splitting big sounds into chunks?
  
  ---- GAME ----
  [x] camera
  [x] basic player movement
  [x] player active abilities
  [ ] ability rune examples
- [ ] basic enemy AI and abilities
+ [x] basic enemy AI and abilities
  [ ] some basic GUI
  -[x] hp/mana
  -[ ] gold/exp?
@@ -113,7 +105,7 @@ audio_state.sound_count to 64
  [ ] 5 enemy types
  [ ] first level boss
  [ ] sounds for abilities/enemies
- [ ] sound position volume shifting
+ [x] sound position volume shifting
  [ ] shops
  [ ] using exp for leveling up abilities or adding stats?
  [ ] damage/pick up popup text
@@ -682,6 +674,8 @@ b32 skill_use(State *state, Entity *e, Skill *skill) {
           ball->d_p = v2_to_v3(v2_mul(v2_unit(shoot_dir), 5.0f), 0);
           ball->contact_damage = damage;
           ball->team = e->team;
+          
+          sound_emitter_add(&state->sound_state, &state->snd_bop, e->t.p);
         } break;
       }
     }
@@ -884,7 +878,7 @@ extern GAME_UPDATE(game_update) {
     
     // NOTE(lvl5): when live reloading, the sound files can be overwritten
     // with garbage since it's located in temp arena right now
-    //state->test_sound = load_wav(&state->temp, const_string("sounds/durarara.wav"));
+    state->test_sound = load_wav(&state->temp, const_string("sounds/durarara.wav"));
     //sound_play(&state->sound_state, &state->test_sound, Sound_Type_MUSIC);
     state->snd_bop = load_wav(&state->temp, const_string("sounds/bop.wav"));
     
@@ -922,7 +916,7 @@ extern GAME_UPDATE(game_update) {
     state->debug_atlas.sprite_count = 1;
     
     
-    state->spr_robot_eye = make_sprite(&state->atlas, 0, V2(0.5f, 0.5f));
+    state->spr_robot_eye = make_sprite(&state->atlas, 1, V2(0.5f, 0.5f));
     state->spr_robot_leg = make_sprite(&state->atlas, 1, V2(0, 1));
     state->spr_robot_torso = make_sprite(&state->atlas, 2, V2(0.5f, 0.5f));
     
@@ -939,6 +933,7 @@ extern GAME_UPDATE(game_update) {
     player->t.p = V3(0, 0, 0);
     
     Entity *shooter = add_entity_shooter(state);
+    //state->test_emitter = sound_emitter_add(&state->sound_state, &state->test_sound, v3_zero());
     shooter->t.p = V3(4, 4, 0);
     
     
@@ -972,8 +967,8 @@ extern GAME_UPDATE(game_update) {
     
     state->tile_map.chunks = sb_init(&state->arena, Tile_Chunk, 64, true);
     
-    for (i32 chunk_y = -3; chunk_y < 3; chunk_y++) {
-      for (i32 chunk_x = -3; chunk_x < 3; chunk_x++) {
+    for (i32 chunk_y = -5; chunk_y < 5; chunk_y++) {
+      for (i32 chunk_x = -5; chunk_x < 5; chunk_x++) {
         i32 random_index = 0;
         // random_range_i32(&state->rand, 0, array_count(ascii_chunks) - 1);
         char *ascii_chunk = ascii_chunks[random_index];
@@ -1001,6 +996,10 @@ extern GAME_UPDATE(game_update) {
     
     Camera zero_camera = {0};
     state->camera = zero_camera;
+    
+    
+    particle_emitter_init(&state->temp, &state->test_particle_emitter, state->spr_robot_eye, 1000000);
+    
     state->is_initialized = true;
   }
   
@@ -1044,6 +1043,8 @@ extern GAME_UPDATE(game_update) {
   
   
   DEBUG_SECTION_BEGIN(_draw_tiles);
+  
+#if 0  
   for (u32 chunk_index = 0; chunk_index < sb_count(state->tile_map.chunks); chunk_index++) {
     Tile_Chunk *chunk = state->tile_map.chunks + chunk_index;
     //if (chunk->x != -1 || chunk->y != 0) continue;
@@ -1072,6 +1073,7 @@ extern GAME_UPDATE(game_update) {
       }
     }
   }
+#endif
   DEBUG_SECTION_END(_draw_tiles);
   
   for (i32 entity_index = 1; entity_index < state->entity_count; entity_index++) {
@@ -1091,10 +1093,13 @@ extern GAME_UPDATE(game_update) {
     
     switch (e->controller_type) {
       case Controller_Type_PLAYER: {
+        particle_emitter_emit(&state->test_particle_emitter, &state->rand,
+                              e->t.p, 10);
+        push_particle_emitter(group, &state->test_particle_emitter, dt);
+        
         e->target_p = v2_to_v3(mouse_world, 0);
         move_dir = v2_i(input->move_right.is_down - input->move_left.is_down,
                         input->move_up.is_down - input->move_down.is_down);
-        
         
         for (i32 skill_index = 0; 
              skill_index < array_count(e->skills);
@@ -1111,6 +1116,8 @@ extern GAME_UPDATE(game_update) {
       
       case Controller_Type_AI_SHOOTER: {
         switch (e->ai_state) {
+          state->test_emitter->p = e->t.p;
+          
           case Ai_State_IDLE: {
             f32 move_radius = 5.0f;
             e->target_move_p = V3(random_range(&state->rand, -move_radius, move_radius),
@@ -1341,6 +1348,8 @@ extern GAME_UPDATE(game_update) {
     render_restore(group);
   }
   
+  debug_log("particle count: %d", state->test_particle_emitter.particle_count);
+  
   DEBUG_SECTION_BEGIN(_glClear);
   gl.ClearColor(0.2f, 0.2f, 0.2f, 1.0f);
   gl.Clear(GL_COLOR_BUFFER_BIT);
@@ -1349,6 +1358,7 @@ extern GAME_UPDATE(game_update) {
   
   Sound_Buffer *buffer = platform.request_sound_buffer();
   sound_mix_playing_sounds(buffer, &state->sound_state, &state->temp, dt);
+  sound_update_emitters(&state->sound_state, state->camera.p, dt);
   
   DEBUG_FUNCTION_END();
   debug_end_frame();

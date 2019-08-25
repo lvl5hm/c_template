@@ -38,7 +38,9 @@ typedef void FNGLBLENDFUNCPROC(GLenum src, GLenum dst);
 typedef void FNGLDELETETEXTURESPROC(GLsizei n, GLuint *textures);
 typedef void FNGLVIEWPORTPROC(GLint x, GLint y, GLsizei width, GLsizei height);
 
+
 typedef struct {
+  PFNGLVERTEXATTRIBIPOINTERPROC VertexAttribIPointer;
   PFNGLGENBUFFERSPROC GenBuffers;
   PFNGLBINDBUFFERPROC BindBuffer;
   PFNGLBUFFERDATAPROC BufferData;

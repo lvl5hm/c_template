@@ -59,6 +59,23 @@ i32 random_range_i32(Rand *s, i32 min, i32 max) {
   return result;
 }
 
+v3 random_range_v3(Rand *s, v3 min, v3 max) {
+  v3 result;
+  result.x = random_range(s, min.x, max.x);
+  result.y = random_range(s, min.y, max.y);
+  result.z = random_range(s, min.z, max.z);
+  
+  return result;
+}
 
+v4 random_range_v4(Rand *s, v4 min, v4 max) {
+  v4 result;
+  result.x = random_range(s, min.x, max.x);
+  result.y = random_range(s, min.y, max.y);
+  result.z = random_range(s, min.z, max.z);
+  result.w = random_range(s, min.w, max.w);
+  
+  return result;
+}
 #define LVL5_RANDOM_H
 #endif

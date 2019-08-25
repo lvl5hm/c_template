@@ -19,7 +19,7 @@ typedef struct {
   mat4 model;
   v2 tex_offset;
   v2 tex_scale;
-  v4 color;
+  u32 color;
 } Quad_Instance;
 
 
@@ -44,12 +44,31 @@ typedef struct {
 } Sprite;
 
 
+typedef struct {
+  Transform t;
+  v4 color;
+  
+  Transform d_t;
+  v4 d_color;
+  
+  f32 lifetime;
+} Particle;
+
+typedef struct {
+  Sprite sprite;
+  Particle *particles;
+  i32 particle_count;
+  i32 particle_capacity;
+} Particle_Emitter;
+
+
 
 typedef enum {
   Render_Type_NONE,
   Render_Type_Rect,
   Render_Type_Sprite,
   Render_Type_Text,
+  Render_Type_Particle_Emitter,
 } Render_Type;
 
 typedef struct {
@@ -71,10 +90,16 @@ typedef struct {
 } Render_State;
 
 typedef struct {
+  Particle_Emitter *emitter;
+  f32 dt;
+} Render_Particle_Emitter;
+
+typedef struct {
   union {
     Render_Rect Rect;
     Render_Sprite Sprite;
     Render_Text Text;
+    Render_Particle_Emitter Particle_Emitter;
   };
   Render_Type type;
   Render_State state;

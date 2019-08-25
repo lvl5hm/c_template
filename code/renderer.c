@@ -8,7 +8,6 @@ mat4 transform_apply(mat4 matrix, Transform t) {
   result = mat4_mul_mat4(result, mat4_translated(t.p));
   result = mat4_mul_mat4(result, mat4_rotated(t.angle));
   result = mat4_mul_mat4(result, mat4_scaled(t.scale));
-  
   return result;
 }
 
@@ -17,10 +16,8 @@ mat4 transform_apply_inverse(mat4 matrix, Transform t) {
   result = mat4_mul_mat4(result, mat4_scaled(v3_invert(t.scale)));
   result = mat4_mul_mat4(result, mat4_rotated(-t.angle));
   result = mat4_mul_mat4(result, mat4_translated(v3_mul(t.p, -1)));
-  
   return result;
 }
-
 
 Transform make_transform(v3 p, v3 scale, f32 angle) {
   Transform t;
@@ -194,6 +191,19 @@ void push_text(Render_Group *group, String text) {
 }
 
 
+void push_particle_emitter(Render_Group *group, Particle_Emitter *emitter, f32 dt) {
+  DEBUG_FUNCTION_BEGIN();
+  
+  Render_Particle_Emitter *entry = push_render_item(group, Particle_Emitter);
+  entry->emitter = emitter;
+  entry->dt = dt;
+  group->expected_quad_count += emitter->particle_count - 1; 
+  
+  DEBUG_FUNCTION_END();
+}
+
+
+
 void quad_renderer_init(Quad_Renderer *renderer, State *state) {
   renderer->shader = state->shader_basic;
   
@@ -224,7 +234,7 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state) {
                          (void *)offsetof(Quad_Instance, tex_offset));
   gl.VertexAttribPointer(6, 2, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
                          (void *)offsetof(Quad_Instance, tex_scale));
-  gl.VertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, sizeof(Quad_Instance),
+  gl.VertexAttribPointer(7, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Quad_Instance),
                          (void *)offsetof(Quad_Instance, color));
   
   gl.EnableVertexAttribArray(1);
@@ -339,6 +349,73 @@ mat4 camera_get_projection_matrix(Camera *camera, v2 screen_size) {
   return result;
 }
 
+
+void particle_emitter_init(Arena *arena, Particle_Emitter *emitter, Sprite sprite, i32 capacity) {
+  Particle_Emitter zero_emitter = {0};
+  *emitter = zero_emitter;
+  emitter->particles = arena_push_array(arena, Particle, capacity);
+  emitter->particle_capacity = capacity;
+  emitter->sprite = sprite;
+}
+
+// TODO(lvl5): random value settings
+void particle_emitter_emit(Particle_Emitter *emitter, Rand *rand, v3 pos, i32 count) {
+  v3 pos_min = V3(-0.1f, -0.1f, 0);
+  v3 pos_max = V3(0.1f, 0.1f, 0);
+  v3 scale_min = V3(0.1f, 0.1f, 0);
+  v3 scale_max = V3(0.5f, 0.5f, 0);
+  f32 angle_min = -PI;
+  f32 angle_max = PI;
+  v4 color_min = V4(0, 0, 0, 1);
+  v4 color_max = V4(1, 1, 1, 1);
+  
+  v3 d_pos_min = V3(-4, -4, 0);
+  v3 d_pos_max = V3(4, 4, 0);
+  v3 d_scale_min = V3(-0.1f, -0.1f, 0);
+  v3 d_scale_max = V3(-0.02f, -0.02f, 0);
+  f32 d_angle_min = 0.2f;
+  f32 d_angle_max = -0.2f;
+  v4 d_color_min = V4(0.01f, 0.01f, 0.01f, -0.01f);
+  v4 d_color_max = V4(-0.01f, -0.01f, -0.01f, -0.05f);
+  
+  f32 lifetime_min = 2.0f;
+  f32 lifetime_max = 5.0f;
+  
+  
+  assert(emitter->particle_count + count <= emitter->particle_capacity);
+  for (i32 particle_index = 0;
+       particle_index < count;
+       particle_index++) {
+    Particle *p = emitter->particles + emitter->particle_count++;
+    p->t.p = v3_add(pos, random_range_v3(rand, pos_min, pos_max));
+    p->t.angle = random_range(rand, angle_min, angle_max);
+    p->t.scale = random_range_v3(rand, scale_min, scale_max);
+    p->color = random_range_v4(rand, color_min, color_max);
+    
+    p->d_t.p = random_range_v3(rand, d_pos_min, d_pos_max);
+    p->d_t.angle = random_range(rand, d_angle_min, d_angle_max);
+    p->d_t.scale = random_range_v3(rand, d_scale_min, d_scale_max);
+    p->d_color = random_range_v4(rand, d_color_min, d_color_max);
+    
+    p->lifetime = random_range(rand, lifetime_min, lifetime_max);
+  }
+}
+
+void particle_emitter_remove_particle(Particle_Emitter *emitter, i32 index) {
+  Particle *last = emitter->particles + emitter->particle_count - 1;
+  Particle *removed = emitter->particles + index;
+  *removed = *last;
+  emitter->particle_count--;
+}
+
+u32 color_v4_to_u32(v4 color) {
+  u32 result = ((u8)(color.r*255) << 0) |
+    ((u8)(color.g*255) << 8) |
+    ((u8)(color.b*255) << 16) |
+    ((u8)(color.a*255) << 24);
+  return result;
+}
+
 void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *renderer) {
   DEBUG_FUNCTION_BEGIN();
   
@@ -353,6 +430,12 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
   
   Texture_Atlas *atlas = 0;
   
+#define DUMP_QUADS() \
+  mat4 view_matrix = camera_get_view_matrix(group->camera); \
+  mat4 projection_matrix =  camera_get_projection_matrix(group->camera, group->screen_size); \
+  quad_renderer_draw(renderer, &atlas->bmp, view_matrix, projection_matrix, instances, instance_count); \
+  instance_count = 0;
+  
   DEBUG_SECTION_BEGIN(_push_instances);
   for (i32 item_index = 0; item_index < group->item_count; item_index++) {
     Render_Item *item = group->items + item_index;
@@ -360,13 +443,8 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
       case Render_Type_Sprite: {
         Sprite sprite = item->Sprite.sprite;
         
-        // TODO(lvl5): remove duplicate code
         if (atlas && atlas != sprite.atlas) {
-          mat4 view_matrix = camera_get_view_matrix(group->camera);
-          mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
-          quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
-                             projection_matrix, instances, instance_count);
-          instance_count = 0;
+          DUMP_QUADS();
         }
         
         mat4 model_m = item->state.matrix;
@@ -376,23 +454,77 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
         inst->model = model_m;
         inst->tex_offset = tex_rect.min;
         inst->tex_scale = rect2_get_size(tex_rect);
-        inst->color = item->state.color;
+        inst->color = color_v4_to_u32(item->state.color);
         
         atlas = sprite.atlas;
       } break;
       
-      case Render_Type_Rect: {
+      case Render_Type_Particle_Emitter: {
+        Particle_Emitter *emitter = item->Particle_Emitter.emitter;
+        if (atlas && emitter->sprite.atlas != atlas) {
+          DUMP_QUADS();
+        }
         
+        DEBUG_SECTION_BEGIN(_particles_render);
+        
+        mat4 model_m = item->state.matrix;
+        rect2 tex_rect = sprite_get_rect(emitter->sprite);
+        
+        for (i32 particle_index = 0;
+             particle_index < emitter->particle_count;
+             particle_index++) {
+          Particle *p = emitter->particles + particle_index;
+          
+#if 0
+          mat4 self_m = transform_apply(model_m, p->t);
+#else
+          mat4 self_m = model_m;
+          // NOTE(lvl5): scale
+          self_m.e00 *= p->t.scale.x;
+          self_m.e11 *= p->t.scale.y;
+          self_m.e22 *= p->t.scale.z;
+          
+          // NOTE(lvl5): rotate
+          f32 cos = cos_f32(-p->t.angle);
+          f32 sin = sin_f32(-p->t.angle);
+          self_m.e00 *= cos;
+          self_m.e11 *= cos;
+          self_m.e10 *= sin;
+          self_m.e01 *= -sin;
+          
+          // NOTE(lvl5): translate
+          self_m.e30 += p->t.p.x;
+          self_m.e31 += p->t.p.y;
+          self_m.e32 += p->t.p.z;
+          
+#endif
+          
+          Quad_Instance *inst = instances + instance_count++;
+          inst->model = self_m;
+          inst->tex_offset = tex_rect.min;
+          inst->tex_scale = rect2_get_size(tex_rect);
+          inst->color = color_v4_to_u32(p->color);
+          
+          // NOTE(lvl5): simulate
+          f32 dt = item->Particle_Emitter.dt;
+          p->t.p = v3_add(p->t.p, v3_mul(p->d_t.p, dt));
+          p->t.scale = v3_add(p->t.scale, v3_mul(p->d_t.scale, dt));
+          p->t.angle = p->t.angle + p->d_t.angle*dt;
+          p->color = v4_add(p->color, v4_mul(p->d_color, dt));
+          p->lifetime -= dt;
+          
+          if (p->lifetime <= 0) {
+            particle_emitter_remove_particle(emitter, particle_index);
+            particle_index--;
+          }
+        }
+        atlas = emitter->sprite.atlas;
+        DEBUG_SECTION_END(_particles_render);
       } break;
       
       case Render_Type_Text: {
-        if (atlas && instance_count) {
-          mat4 view_matrix = camera_get_view_matrix(group->camera);
-          mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
-          quad_renderer_draw(renderer, &atlas->bmp, view_matrix,
-                             projection_matrix, instances, instance_count);
-          
-          instance_count = 0;
+        if (atlas && &item->state.font->atlas != atlas) {
+          DUMP_QUADS();
         }
         
         Font *font = item->state.font;
@@ -423,7 +555,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           inst->model = self_m;
           inst->tex_offset = tex_rect.min;
           inst->tex_scale = rect2_get_size(tex_rect);
-          inst->color = item->state.color;
+          inst->color = color_v4_to_u32(item->state.color);
           
           model_m.e30 += metrics.advance*group->camera->scale.x;
         }
@@ -436,11 +568,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
   }
   DEBUG_SECTION_END(_push_instances);
   
-  mat4 view_matrix = camera_get_view_matrix(group->camera);
-  mat4 projection_matrix = camera_get_projection_matrix(group->camera, group->screen_size);
-  
-  quad_renderer_draw(renderer, &atlas->bmp, view_matrix, projection_matrix, 
-                     instances, instance_count);
+  DUMP_QUADS();
   
   DEBUG_FUNCTION_END();
 }

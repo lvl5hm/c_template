@@ -97,6 +97,7 @@ gl_Funcs gl_load_functions() {
   
 #define load_opengl_proc(name) *(u64 *)&(funcs.name) = (u64)get_any_gl_func_address("gl"#name)
   
+  load_opengl_proc(VertexAttribIPointer);
   load_opengl_proc(BindBuffer);
   load_opengl_proc(GenBuffers);
   load_opengl_proc(BufferData);
@@ -720,6 +721,7 @@ void win32_init_opengl(HWND window) {
   
   b32 interval_set = wglSwapIntervalEXT(1);
   
+#if 1
   glEnable(GL_DEBUG_OUTPUT);
   gl.DebugMessageCallback(opengl_debug_callback, 0);
   GLuint unusedIds = 0;
@@ -729,6 +731,7 @@ void win32_init_opengl(HWND window) {
                          0,
                          &unusedIds,
                          true);
+#endif
   
 }
 
@@ -819,7 +822,7 @@ int CALLBACK WinMain(HINSTANCE instance,
   Memory game_memory;
   game_memory.perm_size = megabytes(64);
   game_memory.temp_size = gigabytes(1);
-  game_memory.debug_size = megabytes(128);
+  game_memory.debug_size = megabytes(1024);
   u64 total_size = game_memory.perm_size + game_memory.temp_size + game_memory.debug_size;
   byte *total_memory = (byte *)VirtualAlloc((void *)terabytes(2),
                                             total_size,

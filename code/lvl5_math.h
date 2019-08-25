@@ -29,6 +29,11 @@ i32 max_i32(i32 a, i32 max) {
   return result;
 }
 
+f32 max_f32(f32 a, f32 max) {
+  f32 result = a > max ? a : max;
+  return result;
+}
+
 u32 max_u32(u32 a, u32 max) {
   u32 result = a > max ? a : max;
   return result;
@@ -38,6 +43,11 @@ u32 max_u32(u32 a, u32 max) {
 
 i32 min_i32(i32 a, i32 min) {
   i32 result = a < min ? a : min;
+  return result;
+}
+
+f32 min_f32(f32 a, f32 min) {
+  f32 result = a < min ? a : min;
   return result;
 }
 
@@ -53,6 +63,11 @@ i32 clamp_i32(i32 a, i32 min, i32 max) {
   return result;
 }
 
+f32 clamp_f32(f32 a, f32 min, f32 max) {
+  f32 result = max_f32(min_f32(a, max), min);
+  return result;
+}
+
 i32 pow_i32(i32 a, i32 n) {
   assert(n >= 0);
   i32 result = 1;
@@ -63,8 +78,13 @@ i32 pow_i32(i32 a, i32 n) {
   return result;
 }
 
-f32 sin_f32(f32 a) {
+f32 sin_f32(f32 x) {
+#if 0
   f32 result = sinf(a);
+#else
+  float xx = x*x;
+  float result = x + (x * xx) * (-0.16612511580269618f + xx * (8.0394356072977748e-3f + xx * -1.49414020045938777495e-4f));
+#endif
   return result;
 }
 
