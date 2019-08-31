@@ -8,7 +8,7 @@
 #include "lvl5_random.h"
 
 #define STB_TRUETYPE_IMPLEMENTATION
-#include "stb_truetype.h"
+#include "third_party/stb_truetype.h"
 
 #include "debug.c"
 #include "sound.c"
@@ -911,8 +911,8 @@ extern GAME_UPDATE(game_update) {
     Bitmap *bmp = &state->debug_atlas.bmp;
     *bmp = make_empty_bitmap(&state->arena, 1, 1);
     ((u32 *)bmp->data)[0] = 0xFFFFFFFF;
-    state->debug_atlas.rects = arena_push_array(&state->arena, rect2, 1);
-    state->debug_atlas.rects[0] = rect2_min_max(V2(0, 0), V2(1, 1));
+    state->debug_atlas.rects = arena_push_array(&state->arena, rect2i, 1);
+    state->debug_atlas.rects[0] = rect2i_min_max(V2i(0, 0), V2i(1, 1));
     state->debug_atlas.sprite_count = 1;
     
     
@@ -1025,7 +1025,7 @@ extern GAME_UPDATE(game_update) {
   state->camera.near = 0.0f;
   state->camera.scale = V2(1.0f/PIXELS_PER_METER, 1.0f/PIXELS_PER_METER);
   
-  u64 render_memory = arena_get_mark(&state->temp);
+  Mem_Size render_memory = arena_get_mark(&state->temp);
   Render_Group _group;
   Render_Group *group = &_group;
   
@@ -1044,7 +1044,7 @@ extern GAME_UPDATE(game_update) {
   
   DEBUG_SECTION_BEGIN(_draw_tiles);
   
-#if 0  
+#if 1
   for (u32 chunk_index = 0; chunk_index < sb_count(state->tile_map.chunks); chunk_index++) {
     Tile_Chunk *chunk = state->tile_map.chunks + chunk_index;
     //if (chunk->x != -1 || chunk->y != 0) continue;
@@ -1102,7 +1102,7 @@ extern GAME_UPDATE(game_update) {
     
     switch (e->controller_type) {
       case Controller_Type_PLAYER: {
-        particle_emitter_emit(&state->test_particle_emitter, &state->rand, e->t.p, 1);
+        particle_emitter_emit(&state->test_particle_emitter, &state->rand, e->t.p, 10);
         push_particle_emitter(group, &state->test_particle_emitter, dt);
         
         e->target_p = v2_to_v3(mouse_world, 0);

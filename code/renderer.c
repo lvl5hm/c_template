@@ -77,8 +77,8 @@ void render_font(Render_Group *group, Font *font) {
 }
 
 
-rect2 sprite_get_rect(Sprite spr) {
-  rect2 result = spr.atlas->rects[spr.index];
+rect2i sprite_get_rect(Sprite spr) {
+  rect2i result = spr.atlas->rects[spr.index];
   return result;
 }
 
@@ -404,22 +404,14 @@ void particle_emitter_remove_particle(Particle_Emitter *emitter, i32 index) {
   emitter->particle_count--;
 }
 
-u32 color_v4_to_u32(v4 color) {
-  u32 result = ((u8)(color.r*255) << 0) |
-    ((u8)(color.g*255) << 8) |
-    ((u8)(color.b*255) << 16) |
-    ((u8)(color.a*255) << 24);
-  return result;
-}
-
-void set_instance_params(Quad_Instance *inst, mat4 model_m, Texture_Atlas *atlas, rect2 tex_rect, v4 color) {
+void set_instance_params(Quad_Instance *inst, mat4 model_m, Texture_Atlas *atlas, rect2i tex_rect, v4 color) {
   inst->model = model_m;
-  v2 size = rect2_get_size(tex_rect);
+  v2i size = rect2i_get_size(tex_rect);
   
-  inst->tex_x = (u16)(tex_rect.min.x*atlas->bmp.width);
-  inst->tex_y = (u16)(tex_rect.min.y*atlas->bmp.height);
-  inst->tex_width = (u16)(size.x*atlas->bmp.width);
-  inst->tex_height = (u16)(size.y*atlas->bmp.height);
+  inst->tex_x = (u16)tex_rect.min.x;
+  inst->tex_y = (u16)tex_rect.min.y;
+  inst->tex_width = (u16)size.x;
+  inst->tex_height = (u16)size.y;
   inst->color = color_v4_to_u32(color);
 }
 
@@ -455,7 +447,7 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
         }
         
         mat4 model_m = item->state.matrix;
-        rect2 tex_rect = sprite_get_rect(sprite);
+        rect2i tex_rect = sprite_get_rect(sprite);
         
         Quad_Instance *inst = instances + instance_count++;
         set_instance_params(inst, model_m, sprite.atlas, tex_rect, item->state.color);
@@ -473,26 +465,27 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
         
         atlas = emitter->sprite.atlas;
         mat4 model_m = item->state.matrix;
-        rect2 tex_rect = sprite_get_rect(emitter->sprite);
-        v2 size = rect2_get_size(tex_rect);
-        u16 tex_x = (u16)(tex_rect.min.x*atlas->bmp.width);
-        u16 tex_y = (u16)(tex_rect.min.y*atlas->bmp.height);
-        u16 tex_width = (u16)(size.x*atlas->bmp.width);
-        u16 tex_height = (u16)(size.y*atlas->bmp.height);
+        rect2i tex_rect = sprite_get_rect(emitter->sprite);
+        v2i size = rect2i_get_size(tex_rect);
+        u16 tex_x = (u16)tex_rect.min.x;
+        u16 tex_y = (u16)tex_rect.min.y;
+        u16 tex_width = (u16)size.x;
+        u16 tex_height = (u16)size.y;
         
         for (i32 particle_index = 0;
              particle_index < emitter->particle_count;
              particle_index++) {
           Particle *p = emitter->particles + particle_index;
           
-          
+          DEBUG_SECTION_BEGIN(_particle_calc);
           mat4 self_m = model_m;
           // NOTE(lvl5): scale
           self_m.e00 *= p->t.scale.x;
           self_m.e11 *= p->t.scale.y;
           self_m.e22 *= p->t.scale.z;
           
-          self_m = mat4_mul_mat4(mat4_rotated(p->t.angle), self_m);
+          // NOTE(lvl5): rotate
+          self_m = mat4_rotate(self_m, p->t.angle);
           
           // NOTE(lvl5): translate
           self_m.e30 += p->t.p.x;
@@ -508,6 +501,9 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           inst->tex_height = tex_height;
           inst->color = color_v4_to_u32(p->color);
           
+          DEBUG_SECTION_END(_particle_calc);
+          
+          DEBUG_SECTION_BEGIN(_particle_simulate);
           // NOTE(lvl5): simulate
           f32 dt = item->Particle_Emitter.dt;
           p->t.p = v3_add(p->t.p, v3_mul(p->d_t.p, dt));
@@ -516,10 +512,11 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           p->color = v4_add(p->color, v4_mul(p->d_color, dt));
           p->lifetime -= dt;
           
-          if (p->lifetime <= 0) {
+          if (p->lifetime <= 0 || p->color.a <= 0 || p->t.scale.x <= 0 || p->t.scale.y <= 0) {
             particle_emitter_remove_particle(emitter, particle_index);
             particle_index--;
           }
+          DEBUG_SECTION_END(_particle_simulate);
         }
         DEBUG_SECTION_END(_particles_render);
       } break;
@@ -538,11 +535,9 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           
           Codepoint_Metrics metrics = font_get_metrics(font, ch);
           Sprite spr = font_get_sprite(font, ch);
-          rect2 tex_rect = sprite_get_rect(spr);
+          rect2i tex_rect = sprite_get_rect(spr);
           
-          v2 size_pixels = v2_hadamard(rect2_get_size(tex_rect), 
-                                       V2((f32)spr.atlas->bmp.width,
-                                          (f32)spr.atlas->bmp.height));
+          v2i size_pixels = rect2i_get_size(tex_rect);
           
           mat4 self_m = model_m;
           

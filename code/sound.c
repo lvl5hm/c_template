@@ -157,7 +157,7 @@ void sound_update_emitters(Sound_State *state, v3 camera_p, f32 dt) {
 void sound_mix_playing_sounds(Sound_Buffer *dst, Sound_State *sound_state,
                               Arena *temp, f32 dt) {
   DEBUG_FUNCTION_BEGIN();
-  u64 mixing_memory = arena_get_mark(temp);
+  Mem_Size mixing_memory = arena_get_mark(temp);
   assert(dst->count % 8 == 0);
   
   i32 count_div_4 = dst->count/4;

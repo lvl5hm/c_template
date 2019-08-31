@@ -20,13 +20,11 @@ void main() {
   gl_Position = p;
   
   ivec2 atlas_size = textureSize(texture_image, 0);
-  vec4 tex_size = inst_tex;
-  tex_size.x /= atlas_size.x;
-  tex_size.y /= atlas_size.y;
-  tex_size.z /= atlas_size.x;
-  tex_size.w /= atlas_size.y;
   
-  fr_tex_coord = tex_size.xy + v_pos.xy*tex_size.zw;
+  vec2 tex_pos = vec2(inst_tex.x/atlas_size.x, inst_tex.y/atlas_size.y);
+  vec2 tex_size = vec2(inst_tex.z/atlas_size.x, inst_tex.w/atlas_size.y);
+  
+  fr_tex_coord = tex_pos + v_pos.xy*tex_size;
   fr_color = inst_color;
 }
 

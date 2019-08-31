@@ -11,7 +11,7 @@ typedef struct {
 
 typedef struct {
   Bitmap bmp;
-  rect2 *rects;
+  rect2i *rects;
   i32 sprite_count;
 } Texture_Atlas;
 

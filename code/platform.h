@@ -57,13 +57,13 @@ typedef struct {
   b32 window_resized;
   
   byte *perm;
-  u64 perm_size;
+  Mem_Size perm_size;
   
   byte *temp;
-  u64 temp_size;
+  Mem_Size temp_size;
   
   byte *debug;
-  u64 debug_size;
+  Mem_Size debug_size;
 } Memory;
 
 typedef struct {
@@ -103,7 +103,7 @@ typedef PLATFORM_FILE_ERROR(Platform_File_Error);
 #define PLATFORM_FILE_HAS_NO_ERRORS(name) b32 name(File_Handle file)
 typedef PLATFORM_FILE_HAS_NO_ERRORS(Platform_File_Has_No_Errors);
 
-#define PLATFORM_READ_FILE(name) void name(File_Handle file, void *dst, u64 size, u64 offset)
+#define PLATFORM_READ_FILE(name) void name(File_Handle file, void *dst, Mem_Size size, Mem_Size offset)
 typedef PLATFORM_READ_FILE(Platform_Read_File);
 
 #define PLATFORM_CLOSE_FILE(name) void name(File_Handle file)

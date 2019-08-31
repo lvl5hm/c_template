@@ -87,7 +87,7 @@ Bitmap make_empty_bitmap(Arena *arena, i32 width, i32 height) {
 Texture_Atlas make_texture_atlas_from_bitmaps(Arena *arena, i32 max_width, Bitmap *bitmaps, i32 count) {
   Texture_Atlas result = {0};
   result.sprite_count = count;
-  result.rects = arena_push_array(arena, rect2, count);
+  result.rects = arena_push_array(arena, rect2i, count);
   
   i32 current_x = 0;
   i32 current_y = 0;
@@ -97,17 +97,17 @@ Texture_Atlas make_texture_atlas_from_bitmaps(Arena *arena, i32 max_width, Bitma
     Bitmap *bmp = bitmaps + bitmap_index;
     assert(bmp->width <= max_width);
     
-    rect2 *rect = result.rects + bitmap_index;
+    rect2i *rect = result.rects + bitmap_index;
     if (current_x + bmp->width > max_width) {
       current_x = 0;
       current_y += max_line_height;
       max_line_height = 0;
     }
     
-    rect->min.x = (f32)current_x;
-    rect->min.y = (f32)current_y;
-    rect->max.x = (f32)(current_x + bmp->width);
-    rect->max.y = (f32)(current_y + bmp->height);
+    rect->min.x = current_x;
+    rect->min.y = current_y;
+    rect->max.x = current_x + bmp->width;
+    rect->max.y = current_y + bmp->height;
     
     current_x += bmp->width;
     
@@ -120,7 +120,7 @@ Texture_Atlas make_texture_atlas_from_bitmaps(Arena *arena, i32 max_width, Bitma
   for (i32 bitmap_index = 0; bitmap_index < count; bitmap_index++) {
     Bitmap *bmp = bitmaps + bitmap_index;
     
-    rect2 *rect = result.rects + bitmap_index;
+    rect2i *rect = result.rects + bitmap_index;
     
     // NOTE(lvl5): copy bitmap data
     u32 *row = (u32 *)result.bmp.data + (i32)rect->min.y*max_width + (i32)rect->min.x;
@@ -131,13 +131,6 @@ Texture_Atlas make_texture_atlas_from_bitmaps(Arena *arena, i32 max_width, Bitma
       }
       row += result.bmp.width;
     }
-    
-    // NOTE(lvl5): resize rects to be texture-relative (right now they are in pixels)
-    v2 size = rect2_get_size(*rect);
-    rect->min.x /= result.bmp.width;
-    rect->min.y /= result.bmp.height;
-    rect->max.x /= result.bmp.width;
-    rect->max.y /= result.bmp.height;
   }
   
   return result;
@@ -145,7 +138,7 @@ Texture_Atlas make_texture_atlas_from_bitmaps(Arena *arena, i32 max_width, Bitma
 
 Texture_Atlas make_texture_atlas_from_folder(Arena *temp, Arena *perm, String folder) {
   File_List dir = platform.get_files_in_folder(folder);
-  u64 loaded_bitmaps_memory = arena_get_mark(temp);
+  Mem_Size loaded_bitmaps_memory = arena_get_mark(temp);
   
   Bitmap *bitmaps = arena_push_array(temp, Bitmap, dir.count);
   
@@ -172,7 +165,7 @@ Font load_ttf(Arena *temp, Arena *perm, String file_name) {
   const unsigned char *font_buffer = (const unsigned char *)font_file.data;
   stbtt_InitFont(&font, font_buffer, stbtt_GetFontOffsetForIndex(font_buffer, 0));
   
-  u64 loaded_bitmaps_memory = arena_get_mark(temp);
+  Mem_Size loaded_bitmaps_memory = arena_get_mark(temp);
   result.first_codepoint_index = ' ';
   i32 last_codepoint_index = '~';
   result.codepoint_count = last_codepoint_index - result.first_codepoint_index;

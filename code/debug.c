@@ -258,7 +258,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   
   Debug_GUI *gui = &debug_state->gui;
   
-  u64 debug_render_memory = arena_get_mark(&debug_state->arena);
+  Mem_Size debug_render_memory = arena_get_mark(&debug_state->arena);
   Render_Group _debug_render_group;
   Render_Group *group = &_debug_render_group;
   
