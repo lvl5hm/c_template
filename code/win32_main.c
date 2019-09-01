@@ -52,8 +52,6 @@ typedef struct {
   Sound_Buffer game_sound_buffer;
   
   win32_Replay replay;
-  Arena scratch;
-  Arena arena;
 } win32_State;
 
 win32_State state;
@@ -62,7 +60,7 @@ win32_State state;
 u64 win32_get_last_write_time(String file_name) {
   WIN32_FIND_DATAA find_data;
   HANDLE file_handle = FindFirstFileA(
-    to_c_string(&state.scratch, file_name),
+    to_c_string(file_name),
     &find_data);
   u64 result = 0;
   if (file_handle != INVALID_HANDLE_VALUE) {
@@ -119,7 +117,7 @@ typedef struct {
 } win32_File;
 
 PLATFORM_OPEN_FILE(win32_open_file) {
-  HANDLE handle = CreateFileA((LPCSTR)to_c_string(&state.scratch, file_name),
+  HANDLE handle = CreateFileA((LPCSTR)to_c_string(file_name),
                               GENERIC_READ,
                               FILE_SHARE_READ,
                               0,
@@ -261,7 +259,7 @@ LPDIRECTSOUNDBUFFER win32_init_dsound(HWND window, win32_Sound *win32_sound) {
 
 String win32_get_build_dir() {
   String full_path;
-  full_path.data = arena_push_array(&state.scratch, char, MAX_PATH);
+  full_path.data = (char *)scratch_alloc(sizeof(char)*MAX_PATH);
   full_path.count = GetModuleFileNameA(0, full_path.data, MAX_PATH);
   assert(full_path.count);
   
@@ -283,8 +281,8 @@ String win32_get_work_dir() {
 
 PLATFORM_READ_ENTIRE_FILE(win32_read_entire_file) {
   String path = win32_get_work_dir();
-  String full_name = concat(&state.scratch, path, file_name);
-  char *c_file_name = to_c_string(&state.scratch, full_name);
+  String full_name = concat(path, file_name);
+  char *c_file_name = to_c_string(full_name);
   HANDLE file = CreateFileA(c_file_name,
                             GENERIC_READ,
                             FILE_SHARE_READ,
@@ -456,11 +454,11 @@ File_List win32_get_files_in_folder(String str) {
   File_List result = {0};
   
   // TODO(lvl5): this needs to be freed at some point
-  result.files = sb_init(&state.arena, String, 8, true);
+  result.files = sb_new(String, 16);
   
   WIN32_FIND_DATAA findData;
-  String wildcard = concat(&state.scratch, win32_get_work_dir(), concat(&state.scratch, str, const_string("\\*.*")));
-  char *wildcard_c = to_c_string(&state.scratch, wildcard);
+  String wildcard = concat(win32_get_work_dir(), concat(str, const_string("\\*.*")));
+  char *wildcard_c = to_c_string(wildcard);
   HANDLE file = FindFirstFileA(wildcard_c, &findData);
   
   while (file != INVALID_HANDLE_VALUE) {
@@ -486,6 +484,25 @@ File_List win32_get_files_in_folder(String str) {
 }
 
 
+ALLOCATOR(system_allocator) {
+  byte *result = null;
+  switch (type) {
+    case Alloc_Op_ALLOC: {
+      result = (byte *)malloc(size);
+    } break;
+    
+    case Alloc_Op_FREE: {
+      free(old_ptr);
+    } break;
+    
+    case Alloc_Op_REALLOC: {
+      result = realloc(old_ptr, size);
+    } break;
+    
+    invalid_default_case;
+  }
+  return result;
+}
 
 
 typedef struct {
@@ -561,6 +578,22 @@ int CALLBACK WinMain(HINSTANCE instance,
                      HINSTANCE prevInstance,
                      LPSTR commandLine,
                      int showCommandLine) {
+  {
+    // NOTE(lvl5): context stuff
+    Global_Context_Info info = {0};
+    Context default_ctx = {0};
+    default_ctx.allocator = system_allocator;
+    Arena scratch;
+    Mem_Size scratch_size = megabytes(64);
+    arena_init(&scratch, malloc(scratch_size), scratch_size);
+    default_ctx.scratch = scratch;
+    
+    global_context_info = &info;
+    push_context(default_ctx);
+  }
+  
+  
+  
   win32_Work_Queue high_queue = {0};
   high_queue.semaphore = CreateSemaphoreA(null, 0, array_count(high_queue.entries), null);
   win32_Thread_Info thread_infos[THREAD_COUNT];
@@ -580,10 +613,6 @@ int CALLBACK WinMain(HINSTANCE instance,
   assert(sheduler_granularity_set == TIMERR_NOERROR);
   
   Mem_Size scratch_size = kilobytes(40);
-  arena_init(&state.scratch, malloc(scratch_size), scratch_size);
-  
-  Mem_Size arena_size = megabytes(2);
-  arena_init(&state.arena, malloc(arena_size), arena_size);
   
   // NOTE(lvl5): windows init
   WNDCLASSA window_class = {0};
@@ -638,6 +667,7 @@ int CALLBACK WinMain(HINSTANCE instance,
   HDC device_context = GetDC(window);
   
   Memory game_memory;
+  game_memory.global_context_info = global_context_info;
   game_memory.perm_size = megabytes(64);
   game_memory.temp_size = gigabytes(1);
   game_memory.debug_size = megabytes(512);
@@ -683,14 +713,16 @@ int CALLBACK WinMain(HINSTANCE instance,
   
   MSG message;
   while (state.running) {
+    scratch_reset();
+    
     {
       String build_dir = win32_get_build_dir();
-      String lock_path = concat(&state.scratch, build_dir,
+      String lock_path = concat(build_dir,
                                 const_string("lock.tmp"));
       WIN32_FILE_ATTRIBUTE_DATA ignored;
       b32 lock_file_exists = 
-        GetFileAttributesExA(to_c_string(&state.scratch, lock_path), GetFileExInfoStandard, &ignored);
-      String dll_path = concat(&state.scratch, build_dir,
+        GetFileAttributesExA(to_c_string(lock_path), GetFileExInfoStandard, &ignored);
+      String dll_path = concat(build_dir,
                                const_string("game.dll"));
       
       u64 current_write_time = win32_get_last_write_time(dll_path);
@@ -702,10 +734,10 @@ int CALLBACK WinMain(HINSTANCE instance,
         }
         
         String copy_dll_path = 
-          concat(&state.scratch, build_dir, const_string("game_temp.dll"));
+          concat(build_dir, const_string("game_temp.dll"));
         
-        char *src = to_c_string(&state.scratch, dll_path);
-        char *dst = to_c_string(&state.scratch, copy_dll_path);
+        char *src = to_c_string(dll_path);
+        char *dst = to_c_string(copy_dll_path);
         b32 copy_success = CopyFileA(src, dst, false);
         assert(copy_success);
         
@@ -907,7 +939,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     last_time = current_time;
     last_cycles = current_cycles;
     
-    arena_set_mark(&state.scratch, 0);
     SwapBuffers(device_context);
   }
   

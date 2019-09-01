@@ -1,5 +1,5 @@
 version(1);
-project_name = "c_template";
+project_name = "skill_game";
 
 patterns = {
 	"*.c",

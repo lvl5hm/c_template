@@ -8,7 +8,7 @@
 #include "lvl5_random.h"
 
 #define STB_TRUETYPE_IMPLEMENTATION
-#include "third_party/stb_truetype.h"
+#include <stb_truetype.h>
 
 #include "debug.c"
 #include "sound.c"
@@ -261,7 +261,10 @@ Arena *get_misc_arena(State *state, Entity *e) {
 Entity *add_entity_fireball(State *state) {
   Entity *e = add_entity_with_storage(state);
   
-  e->penetrating_projectile.penetrated_entity_ids = sb_init(get_misc_arena(state, e), i32, 32, true);
+  push_arena_context(get_misc_arena(state, e)); {
+    e->penetrating_projectile.penetrated_entity_ids = sb_new(i32, 32);
+  } pop_context();
+  
   e->collider.box.rect = rect2_center_size(V2(0, 0), V2(1, 1));
   e->collider.type = Collider_Type_BOX;
   e->lifetime.active = true;
@@ -750,7 +753,10 @@ Entity *query_entity_handle(State *state, Entity_Handle handle) {
 }
 
 Entity **query_entities_flag(State *state, Entity_Flag flag) {
-  Entity **result = sb_init(scratch, Entity *, 32, true);
+  push_scratch_context();
+  Entity **result = sb_new(Entity *, 32);
+  pop_context();
+  
   for (i32 i = 1; i < state->entity_count; i++) {
     Entity *e = get_entity(state, i);
     if (e && flag_is_set(e->flags, flag)) {
@@ -828,7 +834,10 @@ Collision collide_aabb_aabb(rect2 a, rect2 b) {
 
 
 Entity **query_entities_collide(State *state, Entity *a_ent) {
-  Entity **result = sb_init(scratch, Entity *, 32, true);
+  push_scratch_context();
+  Entity **result = sb_new(Entity *, 32);
+  pop_context();
+  
   for (i32 i = 1; i < state->entity_count; i++) {
     Entity *e = get_entity(state, i);
     if (e) {
@@ -861,6 +870,7 @@ extern GAME_UPDATE(game_update) {
   
   if (memory.is_reloaded) {
     // NOTE(lvl5): transient memory can be destroyed at this point
+    global_context_info = memory.global_context_info;
     platform = _platform;
     gl = _platform.gl;
     scratch = &state->scratch;
@@ -874,7 +884,8 @@ extern GAME_UPDATE(game_update) {
   if (!state->is_initialized) {
     arena_init(&state->arena, memory.perm + sizeof(State), 
                memory.perm_size - sizeof(State));
-    debug_init(&state->temp, memory.debug + sizeof(Debug_State));
+    
+    debug_init(memory.debug + sizeof(Debug_State));
     
     // NOTE(lvl5): when live reloading, the sound files can be overwritten
     // with garbage since it's located in temp arena right now
@@ -889,6 +900,8 @@ extern GAME_UPDATE(game_update) {
   }
   
   if (!state->is_initialized) {
+    push_arena_context(&state->arena);
+    
     sound_init(&state->sound_state);
     
     debug_state->gui.selected_frame_index = -1;
@@ -899,17 +912,16 @@ extern GAME_UPDATE(game_update) {
     // NOTE(lvl5): font stuff
     
     //state->font = load_ttf(state, platform, const_string("Gugi-Regular.ttf"));
-    state->font = load_ttf(&state->temp, &state->arena, const_string("fonts/arial.ttf"));
+    state->font = load_ttf(const_string("fonts/arial.ttf"));
     
     Buffer shader_src = platform.read_entire_file(const_string("shaders/textured_quad.glsl"));
     gl_Parse_Result sources = gl_parse_glsl(buffer_to_string(shader_src));
     
     state->shader_basic = gl_create_shader(&state->arena, gl, sources.vertex, sources.fragment);
-    state->atlas = make_texture_atlas_from_folder(&state->temp, &state->arena,
-                                                  const_string("sprites"));
+    state->atlas = make_texture_atlas_from_folder(const_string("sprites"));
     
     Bitmap *bmp = &state->debug_atlas.bmp;
-    *bmp = make_empty_bitmap(&state->arena, 1, 1);
+    *bmp = make_empty_bitmap(1, 1);
     ((u32 *)bmp->data)[0] = 0xFFFFFFFF;
     state->debug_atlas.rects = arena_push_array(&state->arena, rect2i, 1);
     state->debug_atlas.rects[0] = rect2i_min_max(V2i(0, 0), V2i(1, 1));
@@ -965,7 +977,7 @@ extern GAME_UPDATE(game_update) {
         "________",
     };
     
-    state->tile_map.chunks = sb_init(&state->arena, Tile_Chunk, 64, true);
+    state->tile_map.chunks = sb_new(Tile_Chunk, 64);
     
     for (i32 chunk_y = -5; chunk_y < 5; chunk_y++) {
       for (i32 chunk_x = -5; chunk_x < 5; chunk_x++) {
@@ -1000,6 +1012,7 @@ extern GAME_UPDATE(game_update) {
     
     particle_emitter_init(&state->temp, &state->test_particle_emitter, state->spr_robot_eye, 1000000);
     
+    pop_context();
     state->is_initialized = true;
   }
   
@@ -1102,7 +1115,7 @@ extern GAME_UPDATE(game_update) {
     
     switch (e->controller_type) {
       case Controller_Type_PLAYER: {
-        particle_emitter_emit(&state->test_particle_emitter, &state->rand, e->t.p, 10);
+        //particle_emitter_emit(&state->test_particle_emitter, &state->rand, e->t.p, 10);
         push_particle_emitter(group, &state->test_particle_emitter, dt);
         
         e->target_p = v2_to_v3(mouse_world, 0);

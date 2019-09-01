@@ -53,6 +53,8 @@ typedef struct {
 
 
 typedef struct {
+  Global_Context_Info *global_context_info;
+  
   b32 is_reloaded;
   b32 window_resized;
   

@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "lvl5_types.h"
+#include <lvl5_types.h>
 #include "debug.h"
 #include "renderer.c"
 #include "platform.h"
@@ -35,13 +35,12 @@ i32 debug_get_var_i32(Debug_Var_Name name) {
   return result;
 }
 
-void debug_init(Arena *temp, byte *debug_memory) {
+void debug_init(byte *debug_memory) {
   arena_init(&debug_state->arena, debug_memory, megabytes(32));
   arena_init_subarena(&debug_state->arena, &debug_state->gui.arena, megabytes(4));
   
   Debug_GUI *gui = &debug_state->gui;
-  gui->font = load_ttf(temp, &debug_state->arena, 
-                       const_string("fonts/Inconsolata-Regular.ttf"));
+  gui->font = load_ttf(const_string("fonts/Inconsolata-Regular.ttf"));
   
   // NOTE(lvl5): variables
   debug_state->vars[Debug_Var_Name_PERF] = (Debug_Var){const_string("perf"), 1};
@@ -52,14 +51,16 @@ void debug_init(Arena *temp, byte *debug_memory) {
   // NOTE(lvl5): terminal
   Debug_Terminal *term = &gui->terminal;
   arena_init_subarena(&debug_state->arena, &term->arena, megabytes(2));
-  term->lines = sb_init(&term->arena, String, 128, true);
-  term->history = sb_init(&term->arena, String, 64, true);
-  term->input_capacity = 512;
-  term->input_data = arena_push_array(&debug_state->arena, char, 
-                                      term->input_capacity);
-  term->input_data[0] = '>';
-  term->input_count = 1;
-  term->cursor = 1;
+  
+  push_arena_context(&term->arena); {
+    term->input_capacity = 512;
+    term->input_data = sb_new(char, term->input_capacity);
+    term->lines = sb_new(String, 128);
+    term->history = sb_new(String, 64);
+    term->input_data[0] = '>';
+    term->input_count = 1;
+    term->cursor = 1;
+  } pop_context();
 }
 
 void debug_add_arena(Arena *arena, String name) {
@@ -277,17 +278,21 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
   if (debug_get_var_i32(Debug_Var_Name_MEMORY) != 0) {
     render_save(group);
     render_translate(group, V3(-screen_size.x*0.5f, 
-                               screen_size.y*0.5f-1.2f,
+                               screen_size.y*0.5f-10,
                                0));
     
+    render_color(group, COLOR_BLACK);
     for (i32 i = 0; i < gui->arena_count; i++) {
       Debug_Arena *debug_arena = gui->arenas + i;
       char buffer[256];
       sprintf_s(buffer, array_count(buffer), "[%s]: %lld/%lld", 
-                to_c_string(&debug_state->arena, debug_arena->name),
+                to_c_string(debug_arena->name),
                 debug_arena->arena->size, debug_arena->arena->capacity);
-      String str = from_c_string(buffer);
-      push_text(group, str);
+      
+      String *str = (String *)scratch_alloc(sizeof(String));
+      *str = alloc_string(&get_context()->scratch, 
+                          buffer, c_string_length(buffer));
+      push_text(group, *str);
       render_translate(group, V3(0, -LINE_INTERVAL, 0));
     }
     
@@ -434,7 +439,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
         f32 percent = (f32)node->duration/(f32)parent_duration*100;
         f32 self_percent = (f32)node->self_duration/(f32)parent_duration*100;
         
-        char *name = to_c_string(&debug_state->arena, node->name);
+        char *name = to_c_string(node->name);
         char *buffer = arena_push_array(scratch, char, 256);
         sprintf_s(buffer, 256, "%s: %.2f%% (self %.2f%%)  (%lld)", 
                   name, percent, self_percent, node->duration);
@@ -479,8 +484,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
         
         if (node->type == Debug_View_Type_FLAT) {
           // NOTE(lvl5): merge all descendant by event id
-          Debug_View_Node *flat_children = sb_init(&debug_state->arena,
-                                                   Debug_View_Node, child_indices_count, false);
+          Debug_View_Node *flat_children = sb_new(Debug_View_Node, child_indices_count);
           
           for (i32 child_index = node->first_child_index;
                child_index < node->one_past_last_child_index;
@@ -539,7 +543,7 @@ void debug_draw_gui(State *state, v2 screen_size, Input *input, f32 dt) {
             f32 percent = (f32)node->duration/(f32)parent_duration*100;
             f32 self_percent = (f32)node->self_duration/(f32)parent_duration*100;
             
-            char *name = to_c_string(&debug_state->arena, node->name);
+            char *name = to_c_string(node->name);
             char *buffer = arena_push_array(scratch, char, 256);
             sprintf_s(buffer, 256, 
                       "%s: %.2f%% (%lld) %d hits (%lld cy/h)", 

@@ -73,21 +73,21 @@ Bitmap load_bmp(String file_name) {
   return result;
 }
 
-Bitmap make_empty_bitmap(Arena *arena, i32 width, i32 height) {
+Bitmap make_empty_bitmap(i32 width, i32 height) {
   Bitmap result;
   result.width = width;
   result.height = height;
-  result.data = (byte *)arena_push_array(arena, u32, width*height);
+  result.data = (byte *)alloc(sizeof(u32)*width*height);
   zero_memory_slow(result.data, width*height*sizeof(u32));
   return result;
 }
 
 
 
-Texture_Atlas make_texture_atlas_from_bitmaps(Arena *arena, i32 max_width, Bitmap *bitmaps, i32 count) {
+Texture_Atlas make_texture_atlas_from_bitmaps(i32 max_width, Bitmap *bitmaps, i32 count) {
   Texture_Atlas result = {0};
   result.sprite_count = count;
-  result.rects = arena_push_array(arena, rect2i, count);
+  result.rects = (rect2i *)alloc(sizeof(rect2i)*count);
   
   i32 current_x = 0;
   i32 current_y = 0;
@@ -116,7 +116,7 @@ Texture_Atlas make_texture_atlas_from_bitmaps(Arena *arena, i32 max_width, Bitma
     }
   }
   
-  result.bmp = make_empty_bitmap(arena, max_width, current_y+max_line_height);
+  result.bmp = make_empty_bitmap(max_width, current_y+max_line_height);
   for (i32 bitmap_index = 0; bitmap_index < count; bitmap_index++) {
     Bitmap *bmp = bitmaps + bitmap_index;
     
@@ -136,28 +136,28 @@ Texture_Atlas make_texture_atlas_from_bitmaps(Arena *arena, i32 max_width, Bitma
   return result;
 }
 
-Texture_Atlas make_texture_atlas_from_folder(Arena *temp, Arena *perm, String folder) {
+Texture_Atlas make_texture_atlas_from_folder(String folder) {
   File_List dir = platform.get_files_in_folder(folder);
-  Mem_Size loaded_bitmaps_memory = arena_get_mark(temp);
   
-  Bitmap *bitmaps = arena_push_array(temp, Bitmap, dir.count);
+  push_scratch_context();
+  Bitmap *bitmaps = sb_new(Bitmap, dir.count);
+  pop_context();
   
   for (i32 file_index = 0; file_index < dir.count; file_index++) {
     String file_name = dir.files[file_index];
-    String full_name = concat(temp, folder, concat(temp, const_string("\\"), file_name));
+    String full_name = concat(folder, concat(const_string("\\"), file_name));
     Bitmap sprite_bmp = load_bmp(full_name);
     bitmaps[file_index] = sprite_bmp;
   }
   
-  Texture_Atlas result = make_texture_atlas_from_bitmaps(perm, 512, bitmaps, dir.count); 
-  arena_set_mark(temp, loaded_bitmaps_memory);
+  Texture_Atlas result = make_texture_atlas_from_bitmaps(512, bitmaps, dir.count); 
   
   return result;
 }
 
 #define FONT_HEIGHT 16
 
-Font load_ttf(Arena *temp, Arena *perm, String file_name) {
+Font load_ttf(String file_name) {
   Font result;
   
   stbtt_fontinfo font;
@@ -165,21 +165,23 @@ Font load_ttf(Arena *temp, Arena *perm, String file_name) {
   const unsigned char *font_buffer = (const unsigned char *)font_file.data;
   stbtt_InitFont(&font, font_buffer, stbtt_GetFontOffsetForIndex(font_buffer, 0));
   
-  Mem_Size loaded_bitmaps_memory = arena_get_mark(temp);
   result.first_codepoint_index = ' ';
   i32 last_codepoint_index = '~';
   result.codepoint_count = last_codepoint_index - result.first_codepoint_index;
-  result.metrics = sb_init(perm, Codepoint_Metrics,
-                           result.codepoint_count, false);
+  result.metrics = sb_new(Codepoint_Metrics,
+                          result.codepoint_count);
   
   
-  Bitmap *bitmaps = sb_init(temp, Bitmap, result.codepoint_count, false);
+  push_scratch_context();
+  Bitmap *bitmaps = sb_new(Bitmap, result.codepoint_count);
+  pop_context();
+  
   for (char ch = result.first_codepoint_index; ch < last_codepoint_index; ch++) {
     i32 width;
     i32 height;
     f32 scale = stbtt_ScaleForPixelHeight(&font, FONT_HEIGHT);
     byte *single_bitmap = stbtt_GetCodepointBitmap(&font, 0, scale, ch, &width, &height, 0, 0);
-    Bitmap bitmap = make_empty_bitmap(temp, width, height);
+    Bitmap bitmap = make_empty_bitmap(width, height);
     
     i32 x0, y0, x1, y1;
     stbtt_GetCodepointBitmapBox(&font, ch, scale, scale, &x0,&y0,&x1,&y1);
@@ -206,7 +208,7 @@ Font load_ttf(Arena *temp, Arena *perm, String file_name) {
     stbtt_GetCodepointHMetrics(&font, ch, &advance, &_lsb);
     metrics.advance = advance*scale;
     
-    metrics.kerning = arena_push_array(perm, f32, result.codepoint_count);
+    metrics.kerning = sb_new(f32, result.codepoint_count);
     for (char codepoint_index = 0;
          codepoint_index< result.codepoint_count;
          codepoint_index++) {
@@ -220,9 +222,8 @@ Font load_ttf(Arena *temp, Arena *perm, String file_name) {
     sb_push(result.metrics, metrics);
   }
   
-  arena_set_mark(temp, loaded_bitmaps_memory);
   
-  Texture_Atlas atlas = make_texture_atlas_from_bitmaps(perm, 512, bitmaps, sb_count(bitmaps));
+  Texture_Atlas atlas = make_texture_atlas_from_bitmaps(512, bitmaps, sb_count(bitmaps));
   result.atlas = atlas;
   
   return result;

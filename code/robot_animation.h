@@ -6,7 +6,7 @@
                                       pack->animation_count);
   {
     Animation a;
-    a.frames = sb_init(&state->arena, Animation_Frame, 16, true);
+    a.frames = sb_new(Animation_Frame, 16);
     
     Animation_Frame frame0 = (Animation_Frame){
       0,
@@ -53,7 +53,7 @@
   
   {
     Animation a;
-    a.frames = sb_init(&state->arena, Animation_Frame, 16, true);
+    a.frames = sb_new(Animation_Frame, 16);
     
     Animation_Frame frame0 = (Animation_Frame){
       0,
@@ -96,7 +96,7 @@
                                       pack->animation_count);
   {
     Animation a;
-    a.frames = sb_init(&state->arena, Animation_Frame, 16, true);
+    a.frames = sb_new(Animation_Frame, 16);
     
     Animation_Frame frame0 = (Animation_Frame){
       0,
@@ -131,7 +131,7 @@
   
   {
     Animation a;
-    a.frames = sb_init(&state->arena, Animation_Frame, 16, true);
+    a.frames = sb_new(Animation_Frame, 16);
     
     Animation_Frame frame0 = (Animation_Frame){
       0,
@@ -170,11 +170,11 @@
 {
   Animation_Pack *pack = state->robot_parts + Robot_Part_EYE;
   pack->animation_count = 2;
-  pack->animations = arena_push_array(&state->arena, Animation, 
-                                      pack->animation_count);
+  pack->animations = sb_new(Animation, 
+                            pack->animation_count);
   {
     Animation a;
-    a.frames = sb_init(&state->arena, Animation_Frame, 16, true);
+    a.frames = sb_new(Animation_Frame, 16);
     
     Animation_Frame frame0 = (Animation_Frame){
       0,
@@ -209,7 +209,7 @@
   
   {
     Animation a;
-    a.frames = sb_init(&state->arena, Animation_Frame, 16, true);
+    a.frames = sb_new(Animation_Frame, 16);
     
     Animation_Frame frame0 = (Animation_Frame){
       0,
