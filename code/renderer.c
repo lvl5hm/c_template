@@ -251,11 +251,13 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state) {
   gl.BindVertexArray(null);
   
   // NOTE(lvl5): buffer data
-  Quad_Vertex vertices[4] = {
+  Quad_Vertex vertices[6] = {
     (Quad_Vertex){V3(0, 1, 0)},
     (Quad_Vertex){V3(0, 0, 0)},
     (Quad_Vertex){V3(1, 1, 0)},
+    (Quad_Vertex){V3(1, 1, 0)},
     (Quad_Vertex){V3(1, 0, 0)},
+    (Quad_Vertex){V3(0, 0, 0)},
   };
   gl.BindBuffer(GL_ARRAY_BUFFER, renderer->vertex_vbo);
   gl.BufferData(GL_ARRAY_BUFFER, array_count(vertices)*sizeof(Quad_Vertex), 
@@ -263,8 +265,10 @@ void quad_renderer_init(Quad_Renderer *renderer, State *state) {
   
   gl.GenTextures(1, &renderer->texture);
   gl.BindTexture(GL_TEXTURE_2D, renderer->texture);
+#if 1
   gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+#endif
 }
 
 void quad_renderer_destroy(Quad_Renderer *renderer) {
@@ -297,7 +301,7 @@ void quad_renderer_draw(Quad_Renderer *renderer, Bitmap *bmp,
   
   DEBUG_SECTION_BEGIN(_draw_call);
   gl.BindVertexArray(renderer->vao);
-  gl.DrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, instance_count);
+  gl.DrawArraysInstanced(GL_TRIANGLES, 0, 6, instance_count);
   DEBUG_SECTION_END(_draw_call);
   
   DEBUG_FUNCTION_END();
@@ -530,6 +534,8 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
         String text = item->Text.text;
         mat4 model_m = item->state.matrix;
         
+#define FONT_SCALE 1.0f
+        
         for (u32 char_index = 0; char_index < text.count; char_index++) {
           char ch = text.data[char_index];
           
@@ -541,16 +547,16 @@ void render_group_output(Arena *arena, Render_Group *group, Quad_Renderer *rende
           
           mat4 self_m = model_m;
           
-          self_m.e00 = group->camera->scale.x*size_pixels.x;
-          self_m.e11 = group->camera->scale.y*size_pixels.y;
+          self_m.e00 = group->camera->scale.x*size_pixels.x*FONT_SCALE;
+          self_m.e11 = group->camera->scale.y*size_pixels.y*FONT_SCALE;
           
-          self_m.e30 -= spr.origin.x*group->camera->scale.x;
-          self_m.e31 -= spr.origin.y*group->camera->scale.y;
+          self_m.e30 -= spr.origin.x*group->camera->scale.x*FONT_SCALE;
+          self_m.e31 -= spr.origin.y*group->camera->scale.y*FONT_SCALE;
           
           Quad_Instance *inst = instances + instance_count++;
           set_instance_params(inst, self_m, &item->state.font->atlas, tex_rect, item->state.color);
           
-          model_m.e30 += metrics.advance*group->camera->scale.x;
+          model_m.e30 += metrics.advance*group->camera->scale.x*FONT_SCALE;
         }
         
         atlas = &font->atlas;

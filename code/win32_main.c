@@ -614,35 +614,8 @@ int CALLBACK WinMain(HINSTANCE instance,
   
   Mem_Size scratch_size = kilobytes(40);
   
-  // NOTE(lvl5): windows init
-  WNDCLASSA window_class = {0};
-  window_class.style = CS_HREDRAW|CS_VREDRAW|CS_OWNDC;
-  window_class.lpfnWndProc = WindowProc;
-  window_class.hInstance = instance;
-  window_class.hCursor = LoadCursor((HINSTANCE)0, IDC_ARROW);
-  window_class.lpszClassName = "testThingWindowClass";
-  
-  if (!RegisterClassA(&window_class)) return 0;
-  
-#define WINDOW_WIDTH 800
-#define WINDOW_HEIGHT 600
-  HWND window = CreateWindowA(window_class.lpszClassName,
-                              "Awesome window name",
-                              WS_OVERLAPPEDWINDOW|WS_VISIBLE,
-                              CW_USEDEFAULT, // x
-                              CW_USEDEFAULT, // y
-                              WINDOW_WIDTH,
-                              WINDOW_HEIGHT,
-                              0,
-                              0,
-                              instance,
-                              0);
-  if (!window) {
-    return 0;
-  }
-  
   // NOTE(lvl5): init openGL
-  win32_init_opengl(window);
+  HWND window = win32_init_opengl(instance, WindowProc);
   
   // NOTE(lvl5): init sound
   {

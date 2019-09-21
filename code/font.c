@@ -89,6 +89,7 @@ Texture_Atlas make_texture_atlas_from_bitmaps(i32 max_width, Bitmap *bitmaps, i3
   result.sprite_count = count;
   result.rects = (rect2i *)alloc(sizeof(rect2i)*count);
   
+  i32 PADDING_X = 1;
   i32 current_x = 0;
   i32 current_y = 0;
   i32 max_line_height = 0;
@@ -109,7 +110,7 @@ Texture_Atlas make_texture_atlas_from_bitmaps(i32 max_width, Bitmap *bitmaps, i3
     rect->max.x = current_x + bmp->width;
     rect->max.y = current_y + bmp->height;
     
-    current_x += bmp->width;
+    current_x += bmp->width + PADDING_X;
     
     if (bmp->height > max_line_height) {
       max_line_height = bmp->height;
@@ -155,7 +156,7 @@ Texture_Atlas make_texture_atlas_from_folder(String folder) {
   return result;
 }
 
-#define FONT_HEIGHT 16
+#define FONT_HEIGHT 21
 
 Font load_ttf(String file_name) {
   Font result;

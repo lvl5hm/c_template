@@ -2,10 +2,10 @@
 
 #include "platform.h"
 #include "game.h"
-#include "lvl5_math.h"
-#include "lvl5_opengl.h"
-#include "lvl5_stretchy_buffer.h"
-#include "lvl5_random.h"
+#include <lvl5_math.h>
+#include <lvl5_opengl.h>
+#include <lvl5_stretchy_buffer.h>
+#include <lvl5_random.h>
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
@@ -16,11 +16,17 @@
 /*
 TODO:
 
-there probably is some memory corruption bug that sometimes sets 
+
+[ ] memory leak when showing flat children??
+[ ] there probably is some memory corruption bug that sometimes sets 
 audio_state.sound_count to 64
 
 ---- ENGINE ----
 [ ] particles
+-[x] simple particles
+-[ ] SIMD
+-[ ] multithreading
+-[ ] physics
 
 
 [ ] multithreading
@@ -1057,7 +1063,7 @@ extern GAME_UPDATE(game_update) {
   
   DEBUG_SECTION_BEGIN(_draw_tiles);
   
-#if 1
+#if 0
   for (u32 chunk_index = 0; chunk_index < sb_count(state->tile_map.chunks); chunk_index++) {
     Tile_Chunk *chunk = state->tile_map.chunks + chunk_index;
     //if (chunk->x != -1 || chunk->y != 0) continue;
@@ -1357,6 +1363,11 @@ extern GAME_UPDATE(game_update) {
     if (debug_get_var_i32(Debug_Var_Name_COLLIDERS)) {
       switch (e->collider.type) {
         case Collider_Type_BOX: {
+#if 0
+          render_rotate(group, 0.1f);
+          render_scale(group, V3(7, 7, 1));
+          push_rect(group, e->collider.box.rect);
+#endif
           push_rect_outline(group, e->collider.box.rect, 0.04f);
         } break;
         case Collider_Type_CIRCLE: {
@@ -1373,7 +1384,7 @@ extern GAME_UPDATE(game_update) {
   
   DEBUG_SECTION_BEGIN(_glClear);
   gl.ClearColor(0.2f, 0.2f, 0.2f, 1.0f);
-  gl.Clear(GL_COLOR_BUFFER_BIT);
+  gl.Clear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
   DEBUG_SECTION_END(_glClear);
   render_group_output(&state->temp, group, &state->renderer);
   
